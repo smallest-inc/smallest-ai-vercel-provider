@@ -57,5 +57,8 @@
     "url": "https://github.com/smallest-inc/smallest-ai-vercel-provider"
   },
   "homepage": "https://smallest.ai",
-  "author": "Smallest AI <support@smallest.ai>"
+  "author": "Smallest AI <support@smallest.ai>",
+  "publishConfig": {
+    "access": "public"
+  }
 }
