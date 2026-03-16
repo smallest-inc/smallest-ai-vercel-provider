@@ -91,7 +91,7 @@ import { readFileSync } from 'fs';
 
 const audioBuffer = readFileSync('recording.wav');
 
-const { text, segments } = await generateTranscription({
+const { text, segments } = await transcribe({
   model: smallestai.transcription('pulse'),
   audio: audioBuffer,
   mediaType: 'audio/wav',
@@ -103,7 +103,7 @@ console.log(text);
 ### Provider Options
 
 ```ts
-const result = await generateTranscription({
+const result = await transcribe({
   model: smallestai.transcription('pulse'),
   audio: audioBuffer,
   mediaType: 'audio/wav',
@@ -115,6 +115,93 @@ const result = await generateTranscription({
     },
   },
 });
+```
+
+## Examples
+
+### Next.js API Route — TTS endpoint
+
+```ts
+// app/api/speak/route.ts
+import { experimental_generateSpeech as generateSpeech } from 'ai';
+import { smallestai } from 'smallestai-vercel-provider';
+
+export async function POST(req: Request) {
+  const { text, voice } = await req.json();
+
+  const { audio } = await generateSpeech({
+    model: smallestai.speech('lightning-v3.1'),
+    text,
+    voice: voice || 'sophia',
+  });
+
+  return new Response(audio.uint8Array, {
+    headers: {
+      'Content-Type': 'audio/wav',
+      'Content-Disposition': 'inline; filename="speech.wav"',
+    },
+  });
+}
+```
+
+### Frontend — Play audio in browser
+
+```tsx
+// components/SpeakButton.tsx
+'use client';
+
+export function SpeakButton({ text }: { text: string }) {
+  const speak = async () => {
+    const res = await fetch('/api/speak', {
+      method: 'POST',
+      body: JSON.stringify({ text, voice: 'sophia' }),
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    new Audio(url).play();
+  };
+
+  return <button onClick={speak}>Speak</button>;
+}
+```
+
+### Next.js API Route — Transcription endpoint
+
+```ts
+// app/api/transcribe/route.ts
+import { experimental_transcribe as transcribe } from 'ai';
+import { smallestai } from 'smallestai-vercel-provider';
+
+export async function POST(req: Request) {
+  const formData = await req.formData();
+  const file = formData.get('audio') as File;
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  const { text, segments } = await transcribe({
+    model: smallestai.transcription('pulse'),
+    audio: buffer,
+    mediaType: file.type || 'audio/wav',
+  });
+
+  return Response.json({ text, segments });
+}
+```
+
+### Node.js Script — Save to file
+
+```ts
+import { experimental_generateSpeech as generateSpeech } from 'ai';
+import { smallestai } from 'smallestai-vercel-provider';
+import { writeFileSync } from 'fs';
+
+const { audio } = await generateSpeech({
+  model: smallestai.speech('lightning-v3.1'),
+  text: 'Hello from Smallest AI!',
+  voice: 'sophia',
+});
+
+writeFileSync('output.wav', Buffer.from(audio.uint8Array));
+console.log('Saved to output.wav');
 ```
 
 ## Links
