@@ -1,4 +1,4 @@
-# @smallestai/vercel-provider
+# smallestai-vercel-provider
 
 Vercel AI SDK provider for [Smallest AI](https://smallest.ai) — ultra-fast text-to-speech (Lightning) and speech-to-text (Pulse).
 
@@ -8,7 +8,7 @@ Vercel AI SDK provider for [Smallest AI](https://smallest.ai) — ultra-fast tex
 ## Installation
 
 ```bash
-npm install @smallestai/vercel-provider
+npm install smallestai-vercel-provider
 ```
 
 ## Setup
@@ -22,7 +22,7 @@ export SMALLEST_API_KEY="your_key_here"
 Or pass it directly:
 
 ```ts
-import { createSmallestAI } from '@smallestai/vercel-provider';
+import { createSmallestAI } from 'smallestai-vercel-provider';
 
 const smallestai = createSmallestAI({ apiKey: 'your_key_here' });
 ```
@@ -31,7 +31,7 @@ const smallestai = createSmallestAI({ apiKey: 'your_key_here' });
 
 ```ts
 import { experimental_generateSpeech as generateSpeech } from 'ai';
-import { smallestai } from '@smallestai/vercel-provider';
+import { smallestai } from 'smallestai-vercel-provider';
 
 const { audio } = await generateSpeech({
   model: smallestai.speech('lightning-v3.1'),
@@ -86,7 +86,7 @@ const { audio } = await generateSpeech({
 
 ```ts
 import { experimental_transcribe as transcribe } from 'ai';
-import { smallestai } from '@smallestai/vercel-provider';
+import { smallestai } from 'smallestai-vercel-provider';
 import { readFileSync } from 'fs';
 
 const audioBuffer = readFileSync('recording.wav');
