@@ -60,7 +60,7 @@ export class SmallestAISpeechModel implements SpeechModelV2 {
 
     const requestBody = {
       text,
-      voice_id: voice ?? 'diana',
+      voice_id: voice ?? 'sophia',
       sample_rate: smallestaiOptions?.sampleRate ?? 24000,
       speed: speed ?? 1.0,
       language: language ?? 'en',

@@ -36,7 +36,7 @@ import { smallestai } from 'smallestai-vercel-provider';
 const { audio } = await generateSpeech({
   model: smallestai.speech('lightning-v3.1'),
   text: 'Hello from Smallest AI!',
-  voice: 'diana',
+  voice: 'sophia',
   speed: 1.0,
 });
 
@@ -55,8 +55,8 @@ const { audio } = await generateSpeech({
 
 | Voice | Gender | Accent | Best For |
 |---|---|---|---|
-| `diana` | Female | American | General use (default) |
-| `vincent` | Male | American | Announcements, briefings |
+| `sophia` | Female | American | General use (default) |
+| `robert` | Male | American | Announcements, briefings |
 | `advika` | Female | Indian | Hindi, code-switching |
 | `vivaan` | Male | Indian | Bilingual English/Hindi |
 | `camilla` | Female | Mexican/Latin | Spanish content |
@@ -69,7 +69,7 @@ const { audio } = await generateSpeech({
 const { audio } = await generateSpeech({
   model: smallestai.speech('lightning-v2'),
   text: 'Hello!',
-  voice: 'vincent',
+  voice: 'robert',
   providerOptions: {
     smallestai: {
       sampleRate: 48000,
