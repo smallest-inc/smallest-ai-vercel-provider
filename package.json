@@ -1,5 +1,5 @@
 {
-  "name": "@smallest-ai/vercel-provider",
+  "name": "@smallestai/vercel-provider",
   "version": "0.1.0",
   "description": "Vercel AI SDK provider for Smallest AI — ultra-fast TTS (Lightning) and STT (Pulse)",
   "license": "Apache-2.0",

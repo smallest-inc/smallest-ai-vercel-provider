@@ -1,4 +1,4 @@
-# @smallest-ai/vercel-provider
+# @smallestai/vercel-provider
 
 Vercel AI SDK provider for [Smallest AI](https://smallest.ai) — ultra-fast text-to-speech (Lightning) and speech-to-text (Pulse).
 
@@ -8,7 +8,7 @@ Vercel AI SDK provider for [Smallest AI](https://smallest.ai) — ultra-fast tex
 ## Installation
 
 ```bash
-npm install @smallest-ai/vercel-provider
+npm install @smallestai/vercel-provider
 ```
 
 ## Setup
@@ -22,7 +22,7 @@ export SMALLEST_API_KEY="your_key_here"
 Or pass it directly:
 
 ```ts
-import { createSmallestAI } from '@smallest-ai/vercel-provider';
+import { createSmallestAI } from '@smallestai/vercel-provider';
 
 const smallestai = createSmallestAI({ apiKey: 'your_key_here' });
 ```
@@ -31,12 +31,12 @@ const smallestai = createSmallestAI({ apiKey: 'your_key_here' });
 
 ```ts
 import { experimental_generateSpeech as generateSpeech } from 'ai';
-import { smallestai } from '@smallest-ai/vercel-provider';
+import { smallestai } from '@smallestai/vercel-provider';
 
 const { audio } = await generateSpeech({
   model: smallestai.speech('lightning-v3.1'),
   text: 'Hello from Smallest AI!',
-  voice: 'emily',
+  voice: 'diana',
   speed: 1.0,
 });
 
@@ -53,13 +53,15 @@ const { audio } = await generateSpeech({
 
 ### Voices
 
-| Voice | Style | Best For |
-|---|---|---|
-| `emily` | Female, neutral | General use (default) |
-| `jasmine` | Female, warm | Storytelling, greetings |
-| `arman` | Male, professional | Reports, briefings |
-| `arnav` | Male, conversational | Casual updates |
-| `mithali` | Female, Hindi-native | Hindi, code-switching |
+| Voice | Gender | Accent | Best For |
+|---|---|---|---|
+| `diana` | Female | American | General use (default) |
+| `vincent` | Male | American | Announcements, briefings |
+| `advika` | Female | Indian | Hindi, code-switching |
+| `vivaan` | Male | Indian | Bilingual English/Hindi |
+| `camilla` | Female | Mexican/Latin | Spanish content |
+
+80+ more voices available. See [API docs](https://waves-docs.smallest.ai).
 
 ### Provider Options
 
@@ -67,7 +69,7 @@ const { audio } = await generateSpeech({
 const { audio } = await generateSpeech({
   model: smallestai.speech('lightning-v2'),
   text: 'Hello!',
-  voice: 'arman',
+  voice: 'vincent',
   providerOptions: {
     smallestai: {
       sampleRate: 48000,
@@ -83,8 +85,8 @@ const { audio } = await generateSpeech({
 ## Speech-to-Text
 
 ```ts
-import { experimental_generateTranscription as generateTranscription } from 'ai';
-import { smallestai } from '@smallest-ai/vercel-provider';
+import { experimental_transcribe as transcribe } from 'ai';
+import { smallestai } from '@smallestai/vercel-provider';
 import { readFileSync } from 'fs';
 
 const audioBuffer = readFileSync('recording.wav');
