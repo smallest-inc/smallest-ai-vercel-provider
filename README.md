@@ -61,7 +61,7 @@ const { audio } = await generateSpeech({
 | `vivaan` | Male | Indian | Bilingual English/Hindi |
 | `camilla` | Female | Mexican/Latin | Spanish content |
 
-80+ more voices available. See [API docs](https://waves-docs.smallest.ai).
+80+ more voices available. See [API docs](https://docs.smallest.ai/waves).
 
 ### Provider Options
 
@@ -207,7 +207,7 @@ console.log('Saved to output.wav');
 ## Links
 
 - [Smallest AI](https://smallest.ai)
-- [API Docs](https://waves-docs.smallest.ai)
+- [API Docs](https://docs.smallest.ai/waves)
 - [Get API Key](https://waves.smallest.ai)
 - [Vercel AI SDK](https://ai-sdk.dev)
 
