@@ -1,6 +1,6 @@
 {
   "name": "smallestai-vercel-provider",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Vercel AI SDK provider for Smallest AI — ultra-fast TTS (Lightning) and STT (Pulse)",
   "license": "Apache-2.0",
   "sideEffects": false,
@@ -28,12 +28,15 @@
   },
   "dependencies": {
     "@ai-sdk/provider": "^2.0.0",
-    "@ai-sdk/provider-utils": "^3.0.0"
+    "@ai-sdk/provider-utils": "^3.0.0",
+    "ws": "^8.20.0"
   },
   "peerDependencies": {
     "zod": "^3.0.0 || ^4.0.0"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "ai": "^6.0.175",
     "tsup": "^8.0.0",
     "typescript": "^5.6.0",
     "zod": "^3.23.0"

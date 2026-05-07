@@ -152,6 +152,93 @@ const result = await transcribe({
 
 > Note: `ageDetection` has been removed from the server API and will emit a warning.
 
+## Streaming Speech-to-Text (WebSocket)
+
+For low-latency / real-time transcription (TTFT ~64ms server-side), use the WS API. Forwards every WS-only flag — `itnNormalize`, `sentenceTimestamps`, `fullTranscript`, `finalizeOnWords`, `maxWords` — over an authenticated WebSocket per the [docs canon](https://docs.smallest.ai/v4.0.0/content/speech-to-text/realtime/quickstart).
+
+```ts
+import { smallestai } from 'smallestai-vercel-provider';
+import { readFileSync } from 'fs';
+
+const stream = smallestai.transcriptionStream('pulse', {
+  language: 'en',
+  encoding: 'linear16',
+  sampleRate: 16000,
+  wordTimestamps: true,
+  diarize: true,
+  redactPii: true,
+  redactPci: true,
+  numerals: 'auto',
+  itnNormalize: true,
+  sentenceTimestamps: true,
+  keywords: ['NVIDIA:5', 'Jensen'],
+});
+
+await stream.connect();
+
+// Stream audio chunks (raw PCM s16le @ 16k mono in this example)
+const pcm = readFileSync('audio.s16le');
+for (let i = 0; i < pcm.length; i += 32 * 1024) {
+  stream.sendAudio(pcm.subarray(i, i + 32 * 1024));
+}
+stream.closeStream(); // server flushes, emits is_last: true, then closes
+
+for await (const msg of stream) {
+  if (!msg.is_final) console.log('partial:', msg.transcript);
+  else console.log('final:', msg.transcript, 'words:', msg.words?.length);
+  if (msg.is_last) break;
+}
+```
+
+### One-shot helper for pre-recorded audio
+
+```ts
+import {
+  smallestai,
+  SmallestAITranscriptionStream,
+} from 'smallestai-vercel-provider';
+
+const stream = smallestai.transcriptionStream('pulse', {
+  language: 'en', encoding: 'linear16', sampleRate: 16000,
+  wordTimestamps: true, sentenceTimestamps: true, itnNormalize: true,
+});
+
+const { transcript, messages } =
+  await SmallestAITranscriptionStream.transcribeOnce(stream, audioBytes);
+
+console.log(transcript);
+```
+
+## Voice Cloning
+
+```ts
+import { smallestai } from 'smallestai-vercel-provider';
+import { readFileSync } from 'fs';
+
+// Create a new instant clone
+const clone = await smallestai.voiceClone.create({
+  file: readFileSync('my-voice.wav'),
+  fileName: 'my-voice.wav',
+  displayName: 'My voice',
+  description: 'Warm narrator',
+  language: 'en',
+});
+console.log(clone.voiceId); // → "voice_abc123"
+
+// List all clones in your org
+const all = await smallestai.voiceClone.list();
+
+// Use it as a voice in TTS
+const { audio } = await generateSpeech({
+  model: smallestai.speech('lightning-v3.1'),
+  text: 'Hello in my own voice.',
+  voice: clone.voiceId,
+});
+
+// Delete when you're done
+await smallestai.voiceClone.delete(clone.voiceId);
+```
+
 ## Examples
 
 ### Next.js API Route — TTS endpoint
