@@ -8,6 +8,7 @@ import type { SmallestAITranscriptionModelId } from './smallestai-transcription-
 import { SmallestAIVoiceCloneClient } from './smallestai-voice-clone';
 import {
   SmallestAITranscriptionStream,
+  type SmallestAITranscriptionStreamConfig,
   type SmallestAITranscriptionStreamOptions,
 } from './smallestai-transcription-stream';
 import { VERSION } from './version';
@@ -33,6 +34,12 @@ export interface SmallestAIProvider {
    * `itnNormalize`, `sentenceTimestamps`, `fullTranscript`,
    * `finalizeOnWords`, `maxWords`, etc.
    *
+   * The optional third argument lets you override per-session
+   * connection config — `auth: 'query'` for browser-native streaming,
+   * `signedUrl` for production browser flows, `autoReconnect` knobs,
+   * etc. Provider-level `apiKey` and `baseURL` are inherited unless
+   * the override sets them.
+   *
    * Usage:
    *   const stream = smallestai.transcriptionStream('pulse', {
    *     language: 'en', encoding: 'linear16', sampleRate: 16000,
@@ -49,6 +56,10 @@ export interface SmallestAIProvider {
   transcriptionStream(
     modelId: SmallestAITranscriptionModelId,
     options: SmallestAITranscriptionStreamOptions,
+    config?: Omit<SmallestAITranscriptionStreamConfig, 'apiKey' | 'baseURL'> & {
+      apiKey?: string;
+      baseURL?: string;
+    },
   ): SmallestAITranscriptionStream;
 }
 
@@ -120,10 +131,12 @@ export function createSmallestAI(
   const transcriptionStream = (
     modelId: SmallestAITranscriptionModelId,
     streamOptions: SmallestAITranscriptionStreamOptions,
+    perCallConfig?: Partial<SmallestAITranscriptionStreamConfig>,
   ) =>
     new SmallestAITranscriptionStream(modelId, streamOptions, {
       apiKey: options.apiKey,
       baseURL,
+      ...perCallConfig,
     });
 
   const provider: SmallestAIProvider = {

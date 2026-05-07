@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * One-shot TTS hook — calls a server route that returns audio bytes
@@ -87,6 +87,18 @@ export function useSpeech(opts: UseSpeechOptions = {}): UseSpeechResult {
     },
     [apiPath, opts.headers],
   );
+
+  // Revoke any outstanding object URL on unmount so we don't leak Blob
+  // backing storage when a user navigates away mid-playback.
+  useEffect(() => {
+    return () => {
+      if (urlRef.current) {
+        URL.revokeObjectURL(urlRef.current);
+        urlRef.current = null;
+      }
+      abortRef.current?.abort();
+    };
+  }, []);
 
   return { audioUrl, isLoading, error, generate, reset };
 }

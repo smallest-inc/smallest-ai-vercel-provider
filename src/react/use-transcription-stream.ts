@@ -66,6 +66,9 @@ export function useTranscriptionStream(
     abortRef.current?.abort();
     abortRef.current = null;
     setIsStreaming(false);
+    // Clear the in-flight partial so the UI doesn't show a stale
+    // "..." after the user explicitly cancels.
+    setPartial('');
   }, []);
 
   const transcribe = useCallback<UseTranscriptionStreamResult['transcribe']>(

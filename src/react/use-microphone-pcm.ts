@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * Low-level browser microphone capture: getUserMedia → AudioWorklet →
@@ -221,6 +221,16 @@ export function useMicrophonePCM(
       throw e;
     }
   }, [batchMs, isCapturing, maxQueued, opts, stop, targetRate]);
+
+  // Cleanup on unmount: release the mic + close the AudioContext so
+  // the browser's "recording" indicator goes away when the component
+  // is torn down without an explicit stop().
+  useEffect(() => {
+    return () => {
+      stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return {
     isCapturing,

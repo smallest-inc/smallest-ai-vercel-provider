@@ -66,6 +66,10 @@ export function useMicrophoneTranscription(
   // consumes. The mic hook's `onChunk` enqueues into the controller.
   const controllerRef = useRef<ReadableStreamDefaultController<Uint8Array> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Synchronous start() guard — `isStreaming` is React state which
+  // updates asynchronously, so two clicks in the same tick would both
+  // see `false` and race two captures. The ref flips immediately.
+  const runningRef = useRef(false);
 
   const reset = useCallback(() => {
     setTranscript('');
@@ -92,6 +96,7 @@ export function useMicrophoneTranscription(
   });
 
   const stop = useCallback(async () => {
+    runningRef.current = false;
     mic.stop();
     try {
       controllerRef.current?.close();
@@ -102,10 +107,15 @@ export function useMicrophoneTranscription(
     abortRef.current?.abort();
     abortRef.current = null;
     setIsStreaming(false);
+    setPartial('');
   }, [mic]);
 
   const start = useCallback<UseMicrophoneTranscriptionResult['start']>(async () => {
-    if (isStreaming) return;
+    // Synchronous guard — flip BEFORE any await so concurrent calls
+    // see the new value immediately. React state isStreaming would
+    // race here.
+    if (runningRef.current) return;
+    runningRef.current = true;
     reset();
 
     const ctrl = new AbortController();

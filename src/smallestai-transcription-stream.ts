@@ -1,8 +1,26 @@
 import { z } from 'zod';
 import { loadApiKey, withoutTrailingSlash } from '@ai-sdk/provider-utils';
-import WebSocketImpl from 'ws';
 import { VERSION } from './version';
 import type { SmallestAITranscriptionModelId } from './smallestai-transcription-options';
+
+// `ws` is lazy-loaded inside defaultWebSocketFactory() — see the
+// comment there. Bundling it at module scope would pull in Node-only
+// fs/net/tls/etc. into every browser bundle even when consumers use
+// `auth: 'query'` or `signedUrl` (which need only native WebSocket).
+type WSCtor = new (
+  url: string,
+  opts?: { headers?: Record<string, string> },
+) => unknown;
+let cachedWsCtor: WSCtor | null = null;
+async function loadWsCtor(): Promise<WSCtor> {
+  if (cachedWsCtor) return cachedWsCtor;
+  // Dynamic import keeps the static dependency graph clean — bundlers
+  // that tree-shake (Webpack, Rollup, esbuild, Vite, Next) won't drag
+  // ws into the browser bundle if no code path reaches this function.
+  const mod = await import('ws');
+  cachedWsCtor = (mod.default ?? mod) as unknown as WSCtor;
+  return cachedWsCtor;
+}
 
 /**
  * Options for `smallestai.transcriptionStream(modelId, opts)`.
@@ -446,7 +464,7 @@ export class SmallestAITranscriptionStream
     const { url, headers } = await this.buildUrlAndHeaders();
 
     const factory =
-      this.config.webSocketFactory ?? this.defaultWebSocketFactory();
+      this.config.webSocketFactory ?? (await this.defaultWebSocketFactory());
 
     const ws = factory(url, headers);
     this.ws = ws;
@@ -513,24 +531,27 @@ export class SmallestAITranscriptionStream
    * Pick a default WebSocket factory based on the config:
    *
    *  - 'header' (default, Node-only): use the `ws` package since native
-   *    WebSocket can't set headers.
-   *  - 'query' / signedUrl: use the global `WebSocket` (browser, Node 22+).
-   *    No headers to set, so we don't need `ws`.
+   *    WebSocket can't set headers. Lazy-loaded.
+   *  - 'query' / signedUrl: prefer global `WebSocket` (browser, Node 22+).
+   *    No headers to set, so the SDK doesn't pull `ws` into browser
+   *    bundles. Falls back to lazy-loaded `ws` only if the runtime has
+   *    no native WebSocket (older Node).
    */
-  private defaultWebSocketFactory(): (
+  private async defaultWebSocketFactory(): Promise<(
     url: string,
     headers: Record<string, string>,
-  ) => WSLike {
-    const needsHeaders = !this.config.signedUrl && (this.config.auth ?? 'header') === 'header';
+  ) => WSLike> {
+    const needsHeaders =
+      !this.config.signedUrl && (this.config.auth ?? 'header') === 'header';
     if (needsHeaders) {
-      return (u, h) => new WebSocketImpl(u, { headers: h }) as unknown as WSLike;
+      const Ws = await loadWsCtor();
+      return (u, h) => new Ws(u, { headers: h }) as unknown as WSLike;
     }
-    // Browser / Node 22+ native path. Falls back to `ws` if global
-    // WebSocket isn't available so consumers in older Node still work.
     if (typeof globalThis.WebSocket !== 'undefined') {
       return (u) => new globalThis.WebSocket(u) as unknown as WSLike;
     }
-    return (u) => new WebSocketImpl(u) as unknown as WSLike;
+    const Ws = await loadWsCtor();
+    return (u) => new Ws(u) as unknown as WSLike;
   }
 
   private scheduleReconnect(): void {
