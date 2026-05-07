@@ -7,10 +7,7 @@ import {
 } from '@ai-sdk/provider-utils';
 import { z } from 'zod';
 import type { SmallestAIConfig } from './smallestai-config';
-import {
-  DEFAULT_LIGHTNING_MODEL,
-  type SmallestAISpeechModelId,
-} from './smallestai-speech-options';
+import type { SmallestAISpeechModelId } from './smallestai-speech-options';
 import { smallestaiFailedResponseHandler } from './smallestai-error';
 
 const smallestaiSpeechProviderOptionsSchema = z.object({
@@ -33,8 +30,6 @@ const smallestaiSpeechProviderOptionsSchema = z.object({
 export type SmallestAISpeechProviderOptions = z.infer<
   typeof smallestaiSpeechProviderOptionsSchema
 >;
-
-const SUPPORTED_MODELS = new Set<string>([DEFAULT_LIGHTNING_MODEL]);
 
 export class SmallestAISpeechModel implements SpeechModelV2 {
   readonly specificationVersion = 'v2' as const;
@@ -61,13 +56,6 @@ export class SmallestAISpeechModel implements SpeechModelV2 {
     });
 
     const warnings: Awaited<ReturnType<SpeechModelV2['doGenerate']>>['warnings'] = [];
-
-    if (!SUPPORTED_MODELS.has(this.modelId)) {
-      warnings.push({
-        type: 'other' as const,
-        message: `Unknown speech model '${this.modelId}'. Only '${DEFAULT_LIGHTNING_MODEL}' is supported.`,
-      });
-    }
 
     const normalizedOutputFormat =
       smallestaiOptions?.outputFormat === 'ulaw'

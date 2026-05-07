@@ -10,7 +10,7 @@ for the AI SDK contains support for text-to-speech (Lightning v3.1) and
 speech-to-text (Pulse) models.
 
 For more information about Smallest AI, see the
-[Smallest AI Documentation](https://docs.smallest.ai/waves).
+[Smallest AI Documentation](https://docs.smallest.ai).
 
 ## Setup
 
@@ -52,14 +52,19 @@ const smallestai = createSmallestAI({
 
 ## Speech Models
 
-You can create Smallest AI speech models using the `.speech()` method:
+You can create Smallest AI speech models using the `.speech()` method. The
+package also exports `DEFAULT_LIGHTNING_MODEL` so you don't have to hard-code
+the model id:
 
 ```ts
 import { experimental_generateSpeech as generateSpeech } from 'ai';
-import { smallestai } from 'smallestai-vercel-provider';
+import {
+  smallestai,
+  DEFAULT_LIGHTNING_MODEL,
+} from 'smallestai-vercel-provider';
 
 const { audio } = await generateSpeech({
-  model: smallestai.speech('lightning-v3.1'),
+  model: smallestai.speech(DEFAULT_LIGHTNING_MODEL),
   text: 'Hello from Smallest AI!',
   voice: 'sophia',
 });
@@ -72,8 +77,7 @@ const { audio } = await generateSpeech({
 
 | Model ID | Description |
 | --- | --- |
-| `lightning-v3.1` | 44.1 kHz, natural expressive speech, sub-100ms latency |
-| `lightning-v2` | 100ms TTFB, 16 languages, voice cloning |
+| `lightning-v3.1` | 44.1 kHz, natural expressive speech, sub-100ms latency, 22 languages with auto-detect |
 
 ### Voices
 
@@ -94,13 +98,18 @@ You can pass provider-specific options using the `providerOptions` parameter:
 
 ```ts
 const { audio } = await generateSpeech({
-  model: smallestai.speech('lightning-v3.1'),
+  model: smallestai.speech(DEFAULT_LIGHTNING_MODEL),
   text: 'Hello!',
   voice: 'robert',
   providerOptions: {
     smallestai: {
-      sampleRate: 48000, // 8000 | 16000 | 24000 | 44100 | 48000
-      outputFormat: 'mp3', // pcm | mp3 | wav | mulaw
+      sampleRate: 44100,         // 8000 | 16000 | 24000 | 44100
+      outputFormat: 'mp3',       // pcm | mp3 | wav | mulaw | alaw
+      similarity: 0.5,           // voice similarity (0–1)
+      enhancement: 1,            // enhancement level (0 | 1 | 2)
+      addWavHeader: false,
+      saveHistory: false,
+      pronunciationDicts: ['<dict-id>'],
     },
   },
 });
@@ -131,17 +140,43 @@ const result = await transcribe({
   mediaType: 'audio/wav',
   providerOptions: {
     smallestai: {
-      language: 'hi', // ISO 639-1 code
-      diarize: true, // speaker identification
+      language: 'multi',         // 'en' | 'hi' | 'multi' | 30+ ISO codes
+      diarize: true,             // speaker identification
       emotionDetection: true,
+      genderDetection: true,
+      wordTimestamps: true,
+
+      // Privacy
+      redactPii: true,           // names, addresses → [FIRSTNAME_1] etc.
+      redactPci: true,           // card #s, CVV → [CREDITCARDCVV_1] etc.
+
+      // Formatting
+      numerals: 'auto',          // 'true' | 'false' | 'auto'
+      punctuate: true,
+      capitalize: true,
+
+      // Keyword boosting (max 100; "WORD:INTENSIFIER")
+      keywords: ['NVIDIA:5', 'Jensen:4'],
+
+      // Streaming/WS-only knobs (forwarded for forward-compat)
+      itnNormalize: true,
+      sentenceTimestamps: true,
+      fullTranscript: true,
+
+      // Async webhook delivery
+      webhookUrl: 'https://example.com/asr-webhook',
+      webhookMethod: 'POST',
+      webhookExtra: 'job_id:abc123',
     },
   },
 });
 ```
 
+> Note: `ageDetection` has been removed from the server API and emits a deprecation warning if set.
+
 ## Resources
 
 - [GitHub Repository](https://github.com/smallest-inc/smallest-ai-vercel-provider)
 - [npm Package](https://www.npmjs.com/package/smallestai-vercel-provider)
-- [Smallest AI Documentation](https://docs.smallest.ai/waves)
+- [Smallest AI Documentation](https://docs.smallest.ai)
 - [Get API Key](https://waves.smallest.ai)
