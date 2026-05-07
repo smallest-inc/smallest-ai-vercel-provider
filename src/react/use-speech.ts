@@ -43,10 +43,15 @@ export function useSpeech(opts: UseSpeechOptions = {}): UseSpeechResult {
   const urlRef = useRef<string | null>(null);
 
   const reset = useCallback(() => {
+    // Cancel any in-flight generate() so a late response can't
+    // overwrite the freshly-cleared state.
+    abortRef.current?.abort();
+    abortRef.current = null;
     if (urlRef.current) URL.revokeObjectURL(urlRef.current);
     urlRef.current = null;
     setAudioUrl(null);
     setError(null);
+    setIsLoading(false);
   }, []);
 
   const generate = useCallback<UseSpeechResult['generate']>(

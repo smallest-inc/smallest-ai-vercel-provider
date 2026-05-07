@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { SmallestAIConfig } from './smallestai-config';
+import type { LightningV31Language } from './smallestai-speech-options';
 
 export interface VoiceCloneCreateOptions {
   /** Audio file bytes (wav/mp3/webm/mp4). */
@@ -17,7 +18,7 @@ export interface VoiceCloneCreateOptions {
   /** Tags. Sent as a comma-joined string per the server schema. */
   tags?: string[];
   /** ISO 639-1 language code from the lightning-v3.1 supported list. */
-  language?: string;
+  language?: LightningV31Language;
   /** Defaults to `'lightning-v3.1'` server-side. `'lightning-v2'` is rejected. */
   model?: string;
   /** Override request headers. */

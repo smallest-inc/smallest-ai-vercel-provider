@@ -571,9 +571,16 @@ export class SmallestAITranscriptionStream
       // Race: consumer may have called close() between the close event
       // firing and this timeout. Bail out cleanly in that case.
       if (this.explicitClose || this.done) return;
+      const attemptNumber = this.reconnectAttempts;
       this.openSocket().then(
         () => {
-          this.push({ type: 'reconnected', attempt: this.reconnectAttempts });
+          this.push({ type: 'reconnected', attempt: attemptNumber });
+          // Critical: reset the counter on a successful reconnect so
+          // long-running streams don't hit `maxReconnectAttempts`
+          // across unrelated network blips. Without this, a 4-hour
+          // session with one drop per hour would die at the 5th drop
+          // even though every previous reconnect succeeded fast.
+          this.reconnectAttempts = 0;
         },
         (err) => {
           // openSocket() already calls fail() on initial-connect

@@ -77,6 +77,15 @@ export function createTranscriptionStreamSSEResponse(
           // already closed
         }
       };
+      // Handle the case where the signal has *already* aborted by the
+      // time we get here. addEventListener('abort', ...) on an
+      // already-aborted signal is a no-op, so without this short-
+      // circuit we'd open an upstream WS for a request that's already
+      // dead.
+      if (options.signal?.aborted) {
+        onAbort();
+        return;
+      }
       options.signal?.addEventListener('abort', onAbort, { once: true });
 
       try {
