@@ -271,13 +271,15 @@ console.log('full transcript:', fullTranscript);
 The built-in `transcribeOnce()` helper does exactly this — use it for
 the pre-recorded case and you don't have to think about it.
 
-#### 2. Streaming is Node-only — proxy from the browser
+#### 2. Browser streaming — three options
 
-`smallestai.transcriptionStream()` opens a WebSocket with an
-`Authorization: Bearer ...` header. Browser-native `WebSocket` cannot
-set headers (it's a fundamental browser limitation, not an SDK
-choice), so this method only works server-side. Browser apps should
-proxy through their own server.
+The default `transcriptionStream()` flow uses an `Authorization: Bearer`
+header which native browser `WebSocket` can't set. Three options for
+browser apps, in order of recommendation:
+
+#### A. Proxy via your server (recommended for production)
+
+Your server holds the API key, browser never sees it.
 
 The SDK ships a one-line `createTranscriptionStreamSSEResponse()`
 helper that turns the stream into a `Response` of Server-Sent Events,
@@ -326,6 +328,71 @@ for await (const msg of parseTranscriptionStreamSSE(res)) {
 No API key in the browser, no header restriction, no SDK in the
 client bundle. If you're using React, use the `useTranscriptionStream`
 hook instead — it handles the fetch + parse + accumulation for you.
+
+#### B. Browser-native via signed URL (also production-grade)
+
+Your server mints a short-lived signed URL on demand; the browser
+opens the WebSocket directly with that URL. Same security profile as
+(A) but with one less hop:
+
+```ts
+// Browser code:
+import { smallestai } from 'smallestai-vercel-provider';
+
+const stream = smallestai.transcriptionStream('pulse', {
+  language: 'en',
+  encoding: 'linear16',
+  sampleRate: 16000,
+}, {
+  signedUrl: async () => {
+    const res = await fetch('/api/get-stream-url');
+    return (await res.json()).url; // wss://api.smallest.ai/...?token=...
+  },
+});
+await stream.connect();
+// ... same `for await` loop as Node code
+```
+
+The `signedUrl` callback is called on every `connect()` and on every
+reconnect, so each session uses a fresh URL. **Server side**: your
+`/api/get-stream-url` builds the URL with a short-lived token
+parameter; the platform's WS auth accepts the token via query.
+
+#### C. Browser-native with `auth: 'query'` (dev / internal apps only)
+
+The simplest path for a quick demo: the SDK puts the API key directly
+in the URL and uses native `WebSocket`.
+
+```ts
+const stream = smallestai.transcriptionStream('pulse', {
+  language: 'en',
+  encoding: 'linear16',
+  sampleRate: 16000,
+}, {
+  apiKey: 'sk_...',
+  auth: 'query', // skip the Authorization header path
+});
+```
+
+> ⚠️ The API key appears in the WebSocket URL — visible in browser
+> devtools, history, server access logs, and any error reporting tool
+> that captures URLs. Use only for dev and internal apps. For end-user
+> production, use option (A) or (B).
+
+### React hooks for the browser
+
+If you're shipping a React app, skip the manual fetch + parse:
+
+- `useTranscriptionStream({ apiPath })` — the simplest streaming
+  client; talks to your option-(A) SSE proxy.
+- `useMicrophonePCM()` — captures the mic via AudioWorklet and yields
+  raw PCM `Uint8Array` chunks. Pair with anything: a custom WS, the
+  proxy, or your own batching.
+- `useMicrophoneTranscription({ apiPath })` — the all-in-one. Captures
+  mic, streams chunks to your SSE proxy as the request body, exposes
+  live `transcript` + `partial` state. See the [Mic capture →
+  transcription](#mic-capture--transcription-with-react) section
+  below.
 
 ### Next.js setup note (one-time)
 
@@ -550,13 +617,73 @@ writeFileSync('output.wav', Buffer.from(audio.uint8Array));
 console.log('Saved to output.wav');
 ```
 
+## Mic capture → transcription with React
+
+Browser apps that want continuous mic transcription (live captions, voice agents, push-to-talk) get the whole thing wired up by one hook:
+
+```tsx
+'use client';
+import { useMicrophoneTranscription } from 'smallestai-vercel-provider/react';
+
+export function LiveCaptions() {
+  const {
+    transcript, partial, isCapturing, isStreaming,
+    chunksDelivered, chunksDropped,
+    start, stop, reset,
+  } = useMicrophoneTranscription({ apiPath: '/api/transcribe-mic-stream' });
+
+  return (
+    <>
+      <button onClick={isCapturing ? stop : () => start()}>
+        {isCapturing ? 'Stop' : 'Start'}
+      </button>
+      <p>{transcript}{partial && <em> {partial}</em>}</p>
+      {chunksDropped > 0 && <small>⚠ {chunksDropped} chunks dropped (lagging)</small>}
+    </>
+  );
+}
+```
+
+The hook captures via `getUserMedia` + `AudioWorklet`, downsamples to `linear16` @ 16 kHz mono, batches into ~100 ms chunks, and POSTs them as a streaming `ReadableStream` request body to your endpoint. The endpoint pipes those chunks into `smallestai.transcriptionStream(...)` and returns the live transcript via SSE. Drop-oldest backpressure means a slow network never balloons memory — the consumer sees `chunksDropped` go up and can show a "lagging" indicator.
+
+For just the mic capture (no transcription wiring), use the lower-level [`useMicrophonePCM()`](src/react/use-microphone-pcm.ts) hook and pipe `Uint8Array` chunks anywhere you like.
+
+## Security
+
+This section documents what the SDK protects against and what stays the consumer's job. Read it before deploying browser-side flows.
+
+### Threat model
+
+| Threat | Mitigated by |
+|---|---|
+| **TLS-stripping on streaming WS** — `ws://` instead of `wss://` lets a network attacker MITM audio | SDK refuses non-`wss:` URLs from `signedUrl()`. `ws://localhost` only works if you explicitly add `'localhost'` to `allowedSignedHosts`. |
+| **Wrong-host redirect** — bug in your `signedUrl` endpoint sends audio to `attacker.com` | SDK rejects URLs whose host doesn't match `baseURL` (or your explicit `allowedSignedHosts`). |
+| **Signing endpoint hangs** → infinite stall | `signedUrlTimeoutMs` (default 10 s, hard-capped at 60 s) — fast-fail with a clear error. |
+| **API key in browser bundle** | Default flow uses `Authorization: Bearer` server-side only. `auth: 'query'` puts the key in the URL — the SDK emits a one-time `console.warn` so it can't be deployed unnoticed. Suppress the warning only after you've audited the deployment via `suppressInsecureAuthWarning: true`. |
+| **Stale signed URL on reconnect** — short-lived token expired during a long session | `signedUrl()` is called on **every** reconnect, never cached. |
+| **Race: double `connect()` call** | Internal `openPromise` deduplicates; second call returns the same Promise. |
+| **TLS verification of the WS** | Native `WebSocket` and the `ws` package both delegate to the runtime's TLS stack. Cannot be disabled by the SDK. |
+
+### What stays your job
+
+- **CSRF-protect your SSE proxy endpoint** (and any `signedUrl` mint endpoint). The SDK can't enforce origin checks for you.
+- **Rate-limit your proxy endpoint.** A malicious client can spam your route to burn your Smallest API budget; gate it behind your auth + per-user rate limits.
+- **Audit `auth: 'query'` deployments.** If you opt into it, make sure the API key is per-user-scoped and rotatable. Don't put a master org key in a public-facing browser bundle.
+- **Pick `signedUrl` token TTLs short.** Recommended: 60 s. The token only needs to live long enough for the browser to open the WS.
+- **Restrict `allowedSignedHosts` to hosts you control.** Never include user-controlled values.
+
+### What the SDK does *not* do
+
+- **Mint signed URLs.** That requires platform support; today the platform's WS auth accepts an `?api_key=` query param, so your signing endpoint can hand out short-lived per-session keys (or proxied API keys with usage scoping). When the platform ships a dedicated signed-token endpoint, the SDK will adopt it — open an [issue](https://github.com/smallest-inc/smallest-ai-vercel-provider/issues) if that's blocking you.
+- **Encrypt audio at rest.** Audio rides over `wss://` in flight; whatever the server does with it (logging, transcription buffers) is the platform's responsibility.
+
 ## Roadmap
 
 Future / deferred — open an issue if any of these would unblock you:
 
-- **Browser-native streaming** — direct browser WebSocket without proxying. Blocked on the platform: native browser `WebSocket` can't set the `Authorization` header, so we'd need a short-lived signed-token endpoint server-side. Until that exists, the SSE-proxy + `useTranscriptionStream` flow is the recommended path (and just as fast in practice).
-- **First-class microphone capture hook** — `useMicrophoneTranscription()` that wraps `getUserMedia` + `MediaRecorder` + `useTranscriptionStream` into one call.
-- **Built-in chunk batching for slow consumers** — backpressure-aware send queue so a chatty mic stream can't outrun the WS.
+- **Platform-issued signed tokens** — today's `signedUrl` flow works because the WS auth middleware accepts `?api_key=`. A dedicated `POST /v1/auth/ws-token` endpoint that mints short-lived JWTs scoped to one session would be cleaner and is tracked separately on the platform side. The SDK will adopt it transparently (`signedUrl` users get the upgrade for free).
+- **Voice activity detection on `useMicrophonePCM`** — drop silent chunks before send, save WS bandwidth + ASR costs.
+- **`useTextToSpeechStream`** — wraps the streaming TTS endpoint (lightning-v3.1 SSE) so the browser can play audio as it's generated instead of waiting for the full clip. Currently `useSpeech` is one-shot.
 
 ## Links
 

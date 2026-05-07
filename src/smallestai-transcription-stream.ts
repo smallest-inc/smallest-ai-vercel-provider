@@ -125,6 +125,92 @@ const messageSchema = z
   })
   .passthrough();
 
+/**
+ * One-time-per-process deduplication for the `auth: 'query'` warning so
+ * we don't spam the console on every connect. The user can opt out via
+ * `suppressInsecureAuthWarning: true`.
+ */
+let queryAuthWarned = false;
+
+function warnQueryAuthOnce() {
+  if (queryAuthWarned) return;
+  queryAuthWarned = true;
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[smallestai-vercel-provider] auth: 'query' is in use. The API key " +
+      'will appear in the WebSocket URL — visible in browser devtools, ' +
+      'history, and any HTTP intermediary that logs request lines. ' +
+      'Acceptable for dev / internal apps with per-user-scoped keys; ' +
+      "for end-user production, prefer signedUrl or the SSE proxy. " +
+      'Pass `suppressInsecureAuthWarning: true` once you have audited the deployment.',
+  );
+}
+
+/**
+ * Validate a URL returned by the user's `signedUrl()` callback.
+ * Defense-in-depth: if the user's signing endpoint has a bug (or is
+ * compromised) and tries to redirect audio elsewhere, we fail loud
+ * before a single byte ships. Throws on rejection.
+ */
+function validateSignedUrl(
+  url: string,
+  expectedHost: string,
+  allowedHosts: string[],
+): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`signedUrl() returned an invalid URL: ${String(url).slice(0, 80)}`);
+  }
+  // Must be wss: (or ws: only if the host is in allowedHosts and looks
+  // like localhost).
+  if (parsed.protocol !== 'wss:') {
+    const isLocalhost =
+      parsed.protocol === 'ws:' &&
+      (parsed.hostname === 'localhost' ||
+        parsed.hostname === '127.0.0.1' ||
+        parsed.hostname === '[::1]');
+    const localhostAllowed = allowedHosts.some(
+      (h) => h === parsed.hostname || h === 'localhost',
+    );
+    if (!(isLocalhost && localhostAllowed)) {
+      throw new Error(
+        `signedUrl() returned a non-wss URL (${parsed.protocol}). ` +
+          'TLS is required for streaming audio. Allow `ws://localhost` ' +
+          'only by adding "localhost" to allowedSignedHosts.',
+      );
+    }
+  }
+  // Host must match expected (or be in the explicit allowlist).
+  if (parsed.host !== expectedHost && !allowedHosts.includes(parsed.hostname)) {
+    throw new Error(
+      `signedUrl() returned host "${parsed.host}" but baseURL host is ` +
+        `"${expectedHost}". Add "${parsed.hostname}" to allowedSignedHosts ` +
+        'if this is intentional.',
+    );
+  }
+  return parsed;
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 /** Minimal WebSocket-like type covering both browser WebSocket and `ws` clients. */
 interface WSLike {
   readyState: number;
@@ -136,16 +222,81 @@ interface WSLike {
   addEventListener(event: 'close', cb: (ev: { code?: number; reason?: string }) => void): void;
 }
 
+export type SmallestAITranscriptionStreamAuth =
+  /**
+   * Default. Sends the API key as `Authorization: Bearer ...` header
+   * via the `ws` package. Node-only (browsers can't set custom
+   * WebSocket headers).
+   */
+  | 'header'
+  /**
+   * Sends the API key as a `?api_key=...` query parameter and uses
+   * native `WebSocket` (browser, Node 22+). Removes the Node-only
+   * limitation but **the API key appears in the URL** — visible in
+   * browser devtools, history, server access logs, and any error
+   * reporting tool that captures URLs. Acceptable for dev / internal
+   * apps; for end-user-facing production, use `signedUrl` instead.
+   */
+  | 'query';
+
 export interface SmallestAITranscriptionStreamConfig {
-  /** Bearer API key. Defaults to `SMALLEST_API_KEY` env var. */
+  /**
+   * Bearer API key. Defaults to `SMALLEST_API_KEY` env var. Required
+   * unless `signedUrl` is provided.
+   */
   apiKey?: string;
   /** Base URL. Defaults to `https://api.smallest.ai`. The SDK upgrades it to `wss://`. */
   baseURL?: string;
   /**
-   * Override the WebSocket constructor. Defaults to the `ws` package
-   * because native WebSocket (browser, Node 22+) cannot set the
-   * `Authorization` header that the Pulse server expects per the docs.
-   * Browser users should proxy through their server.
+   * How to authenticate the WebSocket. Defaults to `'header'`.
+   * See `SmallestAITranscriptionStreamAuth` for the full tradeoff.
+   * Ignored when `signedUrl` is provided.
+   */
+  auth?: SmallestAITranscriptionStreamAuth;
+  /**
+   * Build the connection URL on demand. When provided, the SDK
+   * delegates URL construction entirely — your server can mint a
+   * short-lived signed URL and return it, so the API key never lives
+   * in the browser. Called on every `connect()` (initial and reconnect)
+   * so each session can have a fresh URL.
+   *
+   * Mutually exclusive with `apiKey` + `auth`.
+   *
+   * Security: the returned URL **must** start with `wss:` (the SDK
+   * rejects `ws:` to prevent TLS-stripping). The host **must** match
+   * the configured `baseURL` host unless you explicitly relax that
+   * via `allowedSignedHosts` — defense in depth against a bug in
+   * your signing endpoint redirecting audio to the wrong server.
+   */
+  signedUrl?: () => Promise<string>;
+  /**
+   * Maximum time (ms) the SDK waits on `signedUrl()` before giving up
+   * with an error. Default 10000 (10 s). Hard-capped at 60 s so a
+   * misbehaving signing endpoint can't hang a long-running stream
+   * forever.
+   */
+  signedUrlTimeoutMs?: number;
+  /**
+   * Hosts the SDK accepts in `signedUrl()` results, in addition to the
+   * configured `baseURL` host. Default empty — SDK only accepts the
+   * `baseURL` host. Use sparingly and never include user-controlled
+   * hosts; primarily intended for self-hosted / dual-host deployments.
+   *
+   * To allow `ws:` against `localhost` for local dev, include
+   * `'localhost'` (any port) here.
+   */
+  allowedSignedHosts?: string[];
+  /**
+   * Suppress the one-time `auth: 'query'` security warning. Use this
+   * only after you've confirmed the API key in the URL is acceptable
+   * for your deployment (typically: dev, internal apps, or per-user
+   * scoped keys).
+   */
+  suppressInsecureAuthWarning?: boolean;
+  /**
+   * Override the WebSocket constructor. Defaults: `ws` package for
+   * `auth: 'header'` (header support), native `WebSocket` for
+   * `auth: 'query'` and `signedUrl` flows.
    */
   webSocketFactory?: (url: string, headers: Record<string, string>) => WSLike;
 }
@@ -190,7 +341,35 @@ export class SmallestAITranscriptionStream
     return this.openPromise;
   }
 
-  private buildUrlAndHeaders(): { url: string; headers: Record<string, string> } {
+  private async buildUrlAndHeaders(): Promise<{
+    url: string;
+    headers: Record<string, string>;
+  }> {
+    // signedUrl path: caller owns URL construction entirely. Always
+    // re-fetch (each connect / reconnect gets a fresh URL — that's the
+    // whole point of a signed-URL flow). Hard timeout + scheme/host
+    // validation so a bug in the signing endpoint can't redirect
+    // audio elsewhere.
+    if (this.config.signedUrl) {
+      const timeoutMs = Math.min(
+        this.config.signedUrlTimeoutMs ?? 10_000,
+        60_000,
+      );
+      const url = await withTimeout(
+        this.config.signedUrl(),
+        timeoutMs,
+        'signedUrl()',
+      );
+      const baseURL =
+        withoutTrailingSlash(this.config.baseURL) ?? 'https://api.smallest.ai';
+      const expectedHost = new URL(baseURL).host;
+      validateSignedUrl(url, expectedHost, this.config.allowedSignedHosts ?? []);
+      return {
+        url,
+        headers: { 'User-Agent': `smallest-ai-vercel-provider/${VERSION}` },
+      };
+    }
+
     if (this.cachedUrl && this.cachedHeaders) {
       return { url: this.cachedUrl, headers: this.cachedHeaders };
     }
@@ -207,6 +386,17 @@ export class SmallestAITranscriptionStream
       environmentVariableName: 'SMALLEST_API_KEY',
       description: 'Smallest AI',
     });
+
+    const auth: SmallestAITranscriptionStreamAuth = this.config.auth ?? 'header';
+
+    // Query-mode auth: API key goes in the URL. Set BEFORE the other
+    // params so it's first (and easier to grep for in logs / devtools).
+    if (auth === 'query') {
+      if (!this.config.suppressInsecureAuthWarning) {
+        warnQueryAuthOnce();
+      }
+      params.set('api_key', apiKey);
+    }
 
     if (o.language) params.set('language', o.language);
     if (o.encoding) params.set('encoding', o.encoding);
@@ -230,10 +420,17 @@ export class SmallestAITranscriptionStream
     if (o.finalizeOnWords !== undefined) setBool(params, 'finalize_on_words', o.finalizeOnWords);
 
     const url = `${wsBase}/waves/v1/${this.modelId}/get_text?${params.toString()}`;
+
+    // Headers only carry auth in 'header' mode. 'query' mode skips the
+    // Authorization header so native WebSocket can be used in the
+    // browser without trying (and failing) to set headers.
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${apiKey}`,
       'User-Agent': `smallest-ai-vercel-provider/${VERSION}`,
     };
+    if (auth === 'header') {
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
+
     this.cachedUrl = url;
     this.cachedHeaders = headers;
     return { url, headers };
@@ -245,13 +442,11 @@ export class SmallestAITranscriptionStream
    * is unexpected (no `is_last`, no explicit close from the consumer)
    * and `autoReconnect: true` is set.
    */
-  private openSocket(): Promise<void> {
-    const { url, headers } = this.buildUrlAndHeaders();
+  private async openSocket(): Promise<void> {
+    const { url, headers } = await this.buildUrlAndHeaders();
 
     const factory =
-      this.config.webSocketFactory ??
-      ((u: string, h: Record<string, string>) =>
-        new WebSocketImpl(u, { headers: h }) as unknown as WSLike);
+      this.config.webSocketFactory ?? this.defaultWebSocketFactory();
 
     const ws = factory(url, headers);
     this.ws = ws;
@@ -312,6 +507,30 @@ export class SmallestAITranscriptionStream
         }
       });
     });
+  }
+
+  /**
+   * Pick a default WebSocket factory based on the config:
+   *
+   *  - 'header' (default, Node-only): use the `ws` package since native
+   *    WebSocket can't set headers.
+   *  - 'query' / signedUrl: use the global `WebSocket` (browser, Node 22+).
+   *    No headers to set, so we don't need `ws`.
+   */
+  private defaultWebSocketFactory(): (
+    url: string,
+    headers: Record<string, string>,
+  ) => WSLike {
+    const needsHeaders = !this.config.signedUrl && (this.config.auth ?? 'header') === 'header';
+    if (needsHeaders) {
+      return (u, h) => new WebSocketImpl(u, { headers: h }) as unknown as WSLike;
+    }
+    // Browser / Node 22+ native path. Falls back to `ws` if global
+    // WebSocket isn't available so consumers in older Node still work.
+    if (typeof globalThis.WebSocket !== 'undefined') {
+      return (u) => new globalThis.WebSocket(u) as unknown as WSLike;
+    }
+    return (u) => new WebSocketImpl(u) as unknown as WSLike;
   }
 
   private scheduleReconnect(): void {

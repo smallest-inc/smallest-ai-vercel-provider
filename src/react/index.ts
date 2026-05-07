@@ -9,3 +9,15 @@ export type {
 
 export { useVoiceClone } from './use-voice-clone';
 export type { UseVoiceCloneOptions, UseVoiceCloneResult } from './use-voice-clone';
+
+export { useMicrophonePCM } from './use-microphone-pcm';
+export type {
+  UseMicrophonePCMOptions,
+  UseMicrophonePCMResult,
+} from './use-microphone-pcm';
+
+export { useMicrophoneTranscription } from './use-microphone-transcription';
+export type {
+  UseMicrophoneTranscriptionOptions,
+  UseMicrophoneTranscriptionResult,
+} from './use-microphone-transcription';
