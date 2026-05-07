@@ -674,16 +674,16 @@ This section documents what the SDK protects against and what stays the consumer
 
 ### What the SDK does *not* do
 
-- **Mint signed URLs.** That requires platform support; today the platform's WS auth accepts an `?api_key=` query param, so your signing endpoint can hand out short-lived per-session keys (or proxied API keys with usage scoping). When the platform ships a dedicated signed-token endpoint, the SDK will adopt it — open an [issue](https://github.com/smallest-inc/smallest-ai-vercel-provider/issues) if that's blocking you.
-- **Encrypt audio at rest.** Audio rides over `wss://` in flight; whatever the server does with it (logging, transcription buffers) is the platform's responsibility.
+- **Mint signed URLs.** Your `signedUrl()` callback is the single source of truth — the SDK delegates URL construction entirely. How you sign / scope / expire those URLs is up to you. Open an [issue](https://github.com/smallest-inc/smallest-ai-vercel-provider/issues) if you want a worked example.
+- **Encrypt audio at rest.** Audio rides over `wss://` in flight; what the server does with it is documented at [docs.smallest.ai](https://docs.smallest.ai).
 
 ## Roadmap
 
 Future / deferred — open an issue if any of these would unblock you:
 
-- **Platform-issued signed tokens** — today's `signedUrl` flow works because the WS auth middleware accepts `?api_key=`. A dedicated `POST /v1/auth/ws-token` endpoint that mints short-lived JWTs scoped to one session would be cleaner and is tracked separately on the platform side. The SDK will adopt it transparently (`signedUrl` users get the upgrade for free).
 - **Voice activity detection on `useMicrophonePCM`** — drop silent chunks before send, save WS bandwidth + ASR costs.
-- **`useTextToSpeechStream`** — wraps the streaming TTS endpoint (lightning-v3.1 SSE) so the browser can play audio as it's generated instead of waiting for the full clip. Currently `useSpeech` is one-shot.
+- **`useTextToSpeechStream`** — wraps the streaming TTS endpoint so the browser can play audio as it's generated instead of waiting for the full clip. Currently `useSpeech` is one-shot.
+- **Cookbook recipes** — push-to-talk, voice agent loop, browser → mic → live captions overlay, etc.
 
 ## Links
 
