@@ -209,6 +209,85 @@ const { transcript, messages } =
 console.log(transcript);
 ```
 
+### Streaming caveats & how to handle them
+
+#### 1. `fullTranscript` — accumulate client-side
+
+The server accepts `fullTranscript: true` as a query flag, but the
+`full_transcript` field is currently returned as an empty string.
+Until the server populates it, accumulate the transcript yourself by
+concatenating every `is_final: true` frame's `transcript`:
+
+```ts
+let fullTranscript = '';
+for await (const msg of stream) {
+  if (msg.is_final && msg.transcript) {
+    fullTranscript += (fullTranscript ? ' ' : '') + msg.transcript;
+  }
+  if (msg.is_last) break;
+}
+console.log('full transcript:', fullTranscript);
+```
+
+The built-in `transcribeOnce()` helper does exactly this — use it for
+the pre-recorded case and you don't have to think about it.
+
+#### 2. Streaming is Node-only — proxy from the browser
+
+`smallestai.transcriptionStream()` opens a WebSocket with an
+`Authorization: Bearer ...` header. Browser-native `WebSocket` cannot
+set headers (it's a fundamental browser limitation, not an SDK
+choice), so this method only works server-side. Browser apps should
+proxy through their own server:
+
+```ts
+// app/api/transcribe-stream/route.ts (Next.js, Node runtime)
+import { smallestai } from 'smallestai-vercel-provider';
+import type { NextRequest } from 'next/server';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+export async function POST(req: NextRequest) {
+  const audio = new Uint8Array(await req.arrayBuffer());
+  const stream = smallestai.transcriptionStream('pulse', {
+    language: 'en',
+    encoding: 'linear16',
+    sampleRate: 16000,
+    wordTimestamps: true,
+    itnNormalize: true,
+  });
+  await stream.connect();
+  for (let i = 0; i < audio.length; i += 32 * 1024) {
+    stream.sendAudio(audio.subarray(i, i + 32 * 1024));
+  }
+  stream.closeStream();
+
+  // Proxy the server's frames back to the browser as Server-Sent Events
+  // (or use a TransformStream / WebSocket of your own).
+  const encoder = new TextEncoder();
+  const sse = new ReadableStream({
+    async start(controller) {
+      for await (const msg of stream) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(msg)}\n\n`));
+        if (msg.is_last) break;
+      }
+      controller.close();
+    },
+  });
+  return new Response(sse, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+    },
+  });
+}
+```
+
+The browser then opens this same-origin endpoint with `EventSource` or
+`fetch` + a `ReadableStream` reader — no API key in the browser, no
+header restriction.
+
 ## Voice Cloning
 
 ```ts
@@ -326,12 +405,22 @@ writeFileSync('output.wav', Buffer.from(audio.uint8Array));
 console.log('Saved to output.wav');
 ```
 
+## Roadmap (not in v0.4.0)
+
+These are deliberately deferred to a follow-up release — open an issue if you need any of them sooner:
+
+- **Auto-reconnect on streaming WS drops** — long-running sessions over flaky networks. Today, `connect()` is a single attempt; reconnect logic lives in your app.
+- **Browser-native streaming** — token-in-query / signed-URL flow so browsers can hit the WS directly without proxying through your server. The `Authorization: Bearer` header is the blocker today.
+- **React hooks** — `useTranscriptionStream`, `useSpeech`, `useVoiceClone` so you don't write the boilerplate around `for await` + ref-cleanup yourself.
+
 ## Links
 
 - [Smallest AI](https://smallest.ai)
 - [API Docs](https://docs.smallest.ai/waves)
+- [Vercel AI SDK Integration Guide](https://docs.smallest.ai/v4.0.0/content/integrations/vercel-ai-sdk)
 - [Get API Key](https://waves.smallest.ai)
 - [Vercel AI SDK](https://ai-sdk.dev)
+- [Runnable examples](./examples)
 
 ## License
 
