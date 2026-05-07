@@ -73,16 +73,21 @@ const model = smallestai.speech(DEFAULT_LIGHTNING_MODEL);
 ### Provider Options
 
 ```ts
+import { LightningV31Language } from 'smallestai-vercel-provider';
+
+const language: LightningV31Language = 'auto'; // type-checked against the v3.1 enum
+
 const { audio } = await generateSpeech({
   model: smallestai.speech('lightning-v3.1'),
   text: 'Hello!',
   voice: 'robert',
+  language,
   providerOptions: {
     smallestai: {
       sampleRate: 44100,         // 8000 | 16000 | 24000 | 44100
       similarity: 0.5,           // 0–1
       enhancement: 1,            // 0 | 1 | 2
-      outputFormat: 'mp3',       // pcm | mp3 | wav | mulaw | alaw
+      outputFormat: 'mp3',       // 'pcm' | 'mp3' | 'wav' | 'ulaw' | 'alaw' | 'mulaw' (alias of 'ulaw')
       addWavHeader: false,
       saveHistory: false,
       pronunciationDicts: ['<dict-id>'],
@@ -90,6 +95,16 @@ const { audio } = await generateSpeech({
   },
 });
 ```
+
+> **`outputFormat: 'mulaw'`** is accepted as a friendly alias and normalized to `'ulaw'` before POST — the server enum is `['wav', 'ulaw', 'alaw', 'pcm', 'mp3']`.
+>
+> **`LIGHTNING_V3_1_LANGUAGES`** is also exported as a runtime tuple if you want to render the supported list (e.g. in a language picker):
+>
+> ```ts
+> import { LIGHTNING_V3_1_LANGUAGES } from 'smallestai-vercel-provider';
+> // ['auto', 'en', 'hi', 'mr', 'kn', 'ta', 'bn', 'gu', 'de', 'fr', 'es', 'it',
+> //  'pl', 'nl', 'ru', 'ar', 'he', 'sv', 'ml', 'te', 'pt', 'pa', 'or']
+> ```
 
 ## Speech-to-Text
 
@@ -136,11 +151,6 @@ const result = await transcribe({
       // Keyword boosting (max 100; "WORD:INTENSIFIER")
       keywords: ['NVIDIA:5', 'Jensen:4'],
 
-      // Streaming/WS-only knobs (forwarded for forward-compat; REST currently ignores)
-      itnNormalize: true,
-      sentenceTimestamps: true,
-      fullTranscript: true,
-
       // Async webhook delivery
       webhookUrl: 'https://example.com/asr-webhook',
       webhookMethod: 'POST',
@@ -149,6 +159,8 @@ const result = await transcribe({
   },
 });
 ```
+
+> **WS-only knobs** — `itnNormalize`, `sentenceTimestamps`, `fullTranscript`, `finalizeOnWords`, `maxWords` — are not accepted on the batch endpoint (the server schema doesn't list them; passing them is a TS error on `transcribe()`). Use them on `smallestai.transcriptionStream(...)` instead — see the Streaming section below.
 
 > Note: `ageDetection` has been removed from the server API and will emit a warning.
 
