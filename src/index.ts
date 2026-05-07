@@ -4,6 +4,9 @@ export type {
   SmallestAIProviderSettings,
 } from './smallestai-provider';
 
+export {
+  DEFAULT_LIGHTNING_MODEL,
+} from './smallestai-speech-options';
 export type { SmallestAISpeechModelId } from './smallestai-speech-options';
 export type { SmallestAISpeechProviderOptions } from './smallestai-speech-model';
 

@@ -7,7 +7,10 @@ import {
 } from '@ai-sdk/provider-utils';
 import { z } from 'zod';
 import type { SmallestAIConfig } from './smallestai-config';
-import type { SmallestAISpeechModelId } from './smallestai-speech-options';
+import {
+  DEFAULT_LIGHTNING_MODEL,
+  type SmallestAISpeechModelId,
+} from './smallestai-speech-options';
 import { smallestaiFailedResponseHandler } from './smallestai-error';
 
 const smallestaiSpeechProviderOptionsSchema = z.object({
@@ -17,20 +20,21 @@ const smallestaiSpeechProviderOptionsSchema = z.object({
       z.literal(16000),
       z.literal(24000),
       z.literal(44100),
-      z.literal(48000),
     ])
     .optional(),
-  consistency: z.number().min(0).max(1).optional(),
   similarity: z.number().min(0).max(1).optional(),
-  enhancement: z.number().min(0).max(2).optional(),
-  outputFormat: z
-    .enum(['pcm', 'mp3', 'wav', 'mulaw'])
-    .optional(),
+  enhancement: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
+  outputFormat: z.enum(['pcm', 'mp3', 'wav', 'mulaw', 'alaw', 'ulaw']).optional(),
+  addWavHeader: z.boolean().optional(),
+  saveHistory: z.boolean().optional(),
+  pronunciationDicts: z.array(z.string()).optional(),
 });
 
 export type SmallestAISpeechProviderOptions = z.infer<
   typeof smallestaiSpeechProviderOptionsSchema
 >;
+
+const SUPPORTED_MODELS = new Set<string>([DEFAULT_LIGHTNING_MODEL]);
 
 export class SmallestAISpeechModel implements SpeechModelV2 {
   readonly specificationVersion = 'v2' as const;
@@ -56,27 +60,48 @@ export class SmallestAISpeechModel implements SpeechModelV2 {
       schema: smallestaiSpeechProviderOptionsSchema,
     });
 
-    const outputFormat = smallestaiOptions?.outputFormat ?? 'wav';
+    const warnings: Awaited<ReturnType<SpeechModelV2['doGenerate']>>['warnings'] = [];
 
-    const requestBody = {
+    if (!SUPPORTED_MODELS.has(this.modelId)) {
+      warnings.push({
+        type: 'other' as const,
+        message: `Unknown speech model '${this.modelId}'. Only '${DEFAULT_LIGHTNING_MODEL}' is supported.`,
+      });
+    }
+
+    const normalizedOutputFormat =
+      smallestaiOptions?.outputFormat === 'ulaw'
+        ? 'mulaw'
+        : smallestaiOptions?.outputFormat;
+    const outputFormat = normalizedOutputFormat ?? 'wav';
+
+    const requestBody: Record<string, unknown> = {
       text,
       voice_id: voice ?? 'sophia',
-      sample_rate: smallestaiOptions?.sampleRate ?? 24000,
+      sample_rate: smallestaiOptions?.sampleRate ?? 44100,
       speed: speed ?? 1.0,
-      language: language ?? 'en',
+      language: language ?? 'auto',
       output_format: outputFormat,
-      ...(smallestaiOptions?.consistency !== undefined && {
-        consistency: smallestaiOptions.consistency,
-      }),
-      ...(smallestaiOptions?.similarity !== undefined && {
-        similarity: smallestaiOptions.similarity,
-      }),
-      ...(smallestaiOptions?.enhancement !== undefined && {
-        enhancement: smallestaiOptions.enhancement,
-      }),
     };
 
-    const warnings: Awaited<ReturnType<SpeechModelV2['doGenerate']>>['warnings'] = [];
+    if (smallestaiOptions?.addWavHeader !== undefined) {
+      requestBody.add_wav_header = smallestaiOptions.addWavHeader;
+    }
+    if (smallestaiOptions?.saveHistory !== undefined) {
+      requestBody.save_history = smallestaiOptions.saveHistory;
+    }
+    if (
+      smallestaiOptions?.pronunciationDicts &&
+      smallestaiOptions.pronunciationDicts.length > 0
+    ) {
+      requestBody.pronunciation_dicts = smallestaiOptions.pronunciationDicts;
+    }
+    if (smallestaiOptions?.similarity !== undefined) {
+      requestBody.similarity = smallestaiOptions.similarity;
+    }
+    if (smallestaiOptions?.enhancement !== undefined) {
+      requestBody.enhancement = smallestaiOptions.enhancement;
+    }
 
     if (options.outputFormat && options.outputFormat !== outputFormat) {
       warnings.push({
@@ -90,7 +115,8 @@ export class SmallestAISpeechModel implements SpeechModelV2 {
       warnings.push({
         type: 'unsupported-setting' as const,
         setting: 'instructions' as const,
-        details: 'Smallest AI does not support speech instructions.',
+        details:
+          "Smallest AI ignores the Vercel AI SDK 'instructions' field on lightning-v3.1.",
       });
     }
 

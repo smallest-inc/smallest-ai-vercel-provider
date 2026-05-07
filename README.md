@@ -48,8 +48,15 @@ const { audio } = await generateSpeech({
 
 | Model ID | Description |
 |---|---|
-| `lightning-v2` | 100ms TTFB, 16 languages, voice cloning |
-| `lightning-v3.1` | 44.1 kHz, natural expressive speech, 4 languages |
+| `lightning-v3.1` | 44.1 kHz, natural expressive speech, 22 languages with auto-detect |
+
+You can also import the model name as a constant:
+
+```ts
+import { DEFAULT_LIGHTNING_MODEL, smallestai } from 'smallestai-vercel-provider';
+
+const model = smallestai.speech(DEFAULT_LIGHTNING_MODEL);
+```
 
 ### Voices
 
@@ -67,16 +74,18 @@ const { audio } = await generateSpeech({
 
 ```ts
 const { audio } = await generateSpeech({
-  model: smallestai.speech('lightning-v2'),
+  model: smallestai.speech('lightning-v3.1'),
   text: 'Hello!',
   voice: 'robert',
   providerOptions: {
     smallestai: {
-      sampleRate: 48000,
-      consistency: 0.5,
-      similarity: 0.5,
-      enhancement: 1,
-      outputFormat: 'mp3',
+      sampleRate: 44100,         // 8000 | 16000 | 24000 | 44100
+      similarity: 0.5,           // 0–1
+      enhancement: 1,            // 0 | 1 | 2
+      outputFormat: 'mp3',       // pcm | mp3 | wav | mulaw | alaw
+      addWavHeader: false,
+      saveHistory: false,
+      pronunciationDicts: ['<dict-id>'],
     },
   },
 });
@@ -109,13 +118,39 @@ const result = await transcribe({
   mediaType: 'audio/wav',
   providerOptions: {
     smallestai: {
-      language: 'hi',
+      language: 'multi',         // 'en' | 'hi' | 'multi' | … (auto-detect with 'multi')
       diarize: true,
       emotionDetection: true,
+      genderDetection: true,
+      wordTimestamps: true,
+
+      // Privacy
+      redactPii: true,           // names, addresses → [FIRSTNAME_1] etc.
+      redactPci: true,           // card #s, CVV → [CREDITCARDCVV_1] etc.
+
+      // Formatting
+      numerals: 'auto',          // 'true' | 'false' | 'auto'
+      punctuate: true,
+      capitalize: true,
+
+      // Keyword boosting (max 100; "WORD:INTENSIFIER")
+      keywords: ['NVIDIA:5', 'Jensen:4'],
+
+      // Streaming/WS-only knobs (forwarded for forward-compat; REST currently ignores)
+      itnNormalize: true,
+      sentenceTimestamps: true,
+      fullTranscript: true,
+
+      // Async webhook delivery
+      webhookUrl: 'https://example.com/asr-webhook',
+      webhookMethod: 'POST',
+      webhookExtra: 'job_id:abc123',
     },
   },
 });
 ```
+
+> Note: `ageDetection` has been removed from the server API and will emit a warning.
 
 ## Examples
 

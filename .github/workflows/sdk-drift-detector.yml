@@ -1,0 +1,165 @@
+name: SDK drift detector (upstream-merged → SDK-impact classifier)
+
+# Listens for PRs merged on upstream backend repos (waves-platform, etc.)
+# and asks Claude whether this Vercel SDK needs an update. Only
+# NEWSWORTHY verdicts (SDK_NEEDED or MAYBE) ping Slack; NO_SDK_IMPACT
+# stays silent so the DM channel does not drown in upstream merges.
+#
+# Trigger: repository_dispatch event_type=upstream_pr_merged, sent from
+# each source repo's notify-sdks-on-merge.yml dispatcher (mirror of the
+# docs notify-docs-on-merge.yml workflow already wired up in
+# waves-platform).
+#
+# client_payload shape (same as docs):
+#   { "repo": "OWNER/REPO", "pr_number": 142, "pr_title": "...",
+#     "pr_url": "https://github.com/OWNER/REPO/pull/142",
+#     "merged_by": "username", "base_ref": "main" }
+
+on:
+  repository_dispatch:
+    types: [upstream_pr_merged]
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Upstream repo (owner/name)'
+        required: true
+        default: 'smallest-inc/waves-platform'
+      pr_number:
+        description: 'PR number'
+        required: true
+        default: '1'
+      pr_title:
+        description: 'PR title'
+        required: true
+        default: '[smoke test] sample PR'
+      pr_url:
+        description: 'PR URL'
+        required: true
+        default: 'https://github.com/smallest-inc/waves-platform/pull/1'
+
+permissions: {}
+
+jobs:
+  classify-and-notify:
+    name: Classify upstream PR for SDK impact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Resolve event context
+        id: ctx
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            REPO="${{ github.event.client_payload.repo }}"
+            PR_NUMBER="${{ github.event.client_payload.pr_number }}"
+            PR_TITLE="${{ github.event.client_payload.pr_title }}"
+            PR_URL="${{ github.event.client_payload.pr_url }}"
+          else
+            REPO="${{ inputs.repo }}"
+            PR_NUMBER="${{ inputs.pr_number }}"
+            PR_TITLE="${{ inputs.pr_title }}"
+            PR_URL="${{ inputs.pr_url }}"
+          fi
+          {
+            echo "repo=$REPO"
+            echo "pr_number=$PR_NUMBER"
+            echo "pr_title=$PR_TITLE"
+            echo "pr_url=$PR_URL"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Fetch PR body + diff from upstream repo
+        env:
+          GH_TOKEN: ${{ secrets.UPSTREAM_PR_READ_TOKEN }}
+        run: |
+          REPO="${{ steps.ctx.outputs.repo }}"
+          PR="${{ steps.ctx.outputs.pr_number }}"
+          if [ -z "$GH_TOKEN" ]; then
+            echo "WARN: UPSTREAM_PR_READ_TOKEN not set — running classifier with empty inputs."
+            : > /tmp/pr-body.txt
+            : > /tmp/pr-diff.txt
+            exit 0
+          fi
+          curl -sS -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/pulls/$PR" \
+            | jq -r '.body // ""' > /tmp/pr-body.txt
+          curl -sS -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3.diff" \
+            "https://api.github.com/repos/$REPO/pulls/$PR" \
+            > /tmp/pr-diff.txt
+          echo "PR body: $(wc -c < /tmp/pr-body.txt) bytes"
+          echo "PR diff: $(wc -c < /tmp/pr-diff.txt) bytes"
+
+      - name: Classify (Claude)
+        id: classify
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          node scripts/sdk-drift-classifier.mjs \
+            --repo "${{ steps.ctx.outputs.repo }}" \
+            --pr   "${{ steps.ctx.outputs.pr_number }}" \
+            --pr-title "${{ steps.ctx.outputs.pr_title }}" \
+            --pr-url   "${{ steps.ctx.outputs.pr_url }}" \
+            --pr-body-file /tmp/pr-body.txt \
+            --pr-diff-file /tmp/pr-diff.txt \
+            --out-json /tmp/classification.json
+          VERDICT=$(jq -r '.verdict' /tmp/classification.json)
+          echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Vercel SDK drift classifier"
+            echo ""
+            echo "**Repo:** \`${{ steps.ctx.outputs.repo }}\`  "
+            echo "**PR:** [#${{ steps.ctx.outputs.pr_number }}](${{ steps.ctx.outputs.pr_url }}) — ${{ steps.ctx.outputs.pr_title }}  "
+            echo "**Verdict:** \`$VERDICT\`"
+            echo ""
+            jq -r '.summary' /tmp/classification.json
+            echo ""
+            echo "### Affected SDK files"
+            jq -r '.affected_sdk_files | map("- `" + . + "`") | join("\n")' /tmp/classification.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build Slack payload
+        if: steps.classify.outputs.verdict == 'SDK_NEEDED' || steps.classify.outputs.verdict == 'MAYBE'
+        run: |
+          SUMMARY=$(jq -r '.summary' /tmp/classification.json)
+          FILES=$(jq -r '.affected_sdk_files | map("• `" + . + "`") | join("\n")' /tmp/classification.json)
+          QUESTIONS=$(jq -r '.questions_for_human | map("• " + .) | join("\n")' /tmp/classification.json)
+          VERDICT="${{ steps.classify.outputs.verdict }}"
+          if [ "$VERDICT" = "SDK_NEEDED" ]; then
+            HEADER=":rotating_light: Upstream PR likely needs Vercel SDK update"
+          else
+            HEADER=":mag: Upstream PR — maybe needs SDK update (your call)"
+          fi
+          jq -n \
+            --arg header "$HEADER" \
+            --arg verdict "$VERDICT" \
+            --arg repo "${{ steps.ctx.outputs.repo }}" \
+            --arg pr "#${{ steps.ctx.outputs.pr_number }} — ${{ steps.ctx.outputs.pr_title }}" \
+            --arg pr_url "${{ steps.ctx.outputs.pr_url }}" \
+            --arg run_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --arg summary "$SUMMARY" \
+            --arg files "$FILES" \
+            --arg questions "$QUESTIONS" \
+            '{
+              text: ("Upstream PR drift (Vercel SDK): " + $verdict),
+              blocks: [
+                { type: "header",  text: { type: "plain_text", text: $header } },
+                { type: "section", text: { type: "mrkdwn",     text: ("*" + $repo + "* — <" + $pr_url + "|" + $pr + ">") } },
+                { type: "section", text: { type: "mrkdwn",     text: $summary } },
+                { type: "section", text: { type: "mrkdwn",     text: ("*Affected SDK files:*\n" + $files) } },
+                { type: "section", text: { type: "mrkdwn",     text: (if $questions == "" then "_no open questions_" else ("*Need from you:*\n" + $questions) end) } },
+                { type: "context", elements: [ { type: "mrkdwn", text: ("Classifier run: <" + $run_url + "|view logs>") } ] }
+              ]
+            }' > /tmp/slack-payload.json
+
+      - name: Notify Slack
+        if: steps.classify.outputs.verdict == 'SDK_NEEDED' || steps.classify.outputs.verdict == 'MAYBE'
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_DM_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload-file-path: /tmp/slack-payload.json

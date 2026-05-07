@@ -4,3 +4,7 @@ dist/
 .env
 .env.local
 .DS_Store
+
+# local smoke-test helpers (not shipped, not committed)
+test-e2e.mjs
+.remember/
