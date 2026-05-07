@@ -190,6 +190,33 @@ for await (const msg of stream) {
 }
 ```
 
+### Auto-reconnect on socket drops
+
+Long-running streams (live meetings, hours-long captures) can hit
+network blips, idle timeouts, or load-balancer recycles. Pass
+`autoReconnect: true` and the SDK transparently re-opens with the same
+parameters, then synthesizes a `{ type: 'reconnected', attempt }` frame
+so your consumer can react (show a reconnecting indicator, etc.):
+
+```ts
+const stream = smallestai.transcriptionStream('pulse', {
+  language: 'en',
+  encoding: 'linear16',
+  sampleRate: 16000,
+  autoReconnect: true,
+  maxReconnectAttempts: 5,    // default 5
+  reconnectBackoffMs: 500,    // exponential backoff, capped at 30s
+});
+
+for await (const msg of stream) {
+  if (msg.type === 'reconnected') {
+    console.log(`recovered after ${msg.attempt} attempt(s)`);
+    continue;
+  }
+  // ... normal transcript handling
+}
+```
+
 ### One-shot helper for pre-recorded audio
 
 ```ts
@@ -238,17 +265,22 @@ the pre-recorded case and you don't have to think about it.
 `Authorization: Bearer ...` header. Browser-native `WebSocket` cannot
 set headers (it's a fundamental browser limitation, not an SDK
 choice), so this method only works server-side. Browser apps should
-proxy through their own server:
+proxy through their own server.
+
+The SDK ships a one-line `createTranscriptionStreamSSEResponse()`
+helper that turns the stream into a `Response` of Server-Sent Events,
+so the entire proxy is a few lines:
 
 ```ts
 // app/api/transcribe-stream/route.ts (Next.js, Node runtime)
-import { smallestai } from 'smallestai-vercel-provider';
-import type { NextRequest } from 'next/server';
+import {
+  smallestai,
+  createTranscriptionStreamSSEResponse,
+} from 'smallestai-vercel-provider';
 
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   const audio = new Uint8Array(await req.arrayBuffer());
   const stream = smallestai.transcriptionStream('pulse', {
     language: 'en',
@@ -262,31 +294,132 @@ export async function POST(req: NextRequest) {
     stream.sendAudio(audio.subarray(i, i + 32 * 1024));
   }
   stream.closeStream();
-
-  // Proxy the server's frames back to the browser as Server-Sent Events
-  // (or use a TransformStream / WebSocket of your own).
-  const encoder = new TextEncoder();
-  const sse = new ReadableStream({
-    async start(controller) {
-      for await (const msg of stream) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(msg)}\n\n`));
-        if (msg.is_last) break;
-      }
-      controller.close();
-    },
-  });
-  return new Response(sse, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-    },
-  });
+  return createTranscriptionStreamSSEResponse(stream, { signal: req.signal });
 }
 ```
 
-The browser then opens this same-origin endpoint with `EventSource` or
-`fetch` + a `ReadableStream` reader — no API key in the browser, no
-header restriction.
+The browser opens this same-origin endpoint and parses the SSE stream
+back into messages with the matching helper:
+
+```ts
+import { parseTranscriptionStreamSSE } from 'smallestai-vercel-provider';
+
+const res = await fetch('/api/transcribe-stream', { method: 'POST', body: audioBytes });
+for await (const msg of parseTranscriptionStreamSSE(res)) {
+  if (msg.is_final) console.log(msg.transcript);
+  if (msg.is_last) break;
+}
+```
+
+No API key in the browser, no header restriction, no SDK in the
+client bundle. If you're using React, use the `useTranscriptionStream`
+hook instead — it handles the fetch + parse + accumulation for you.
+
+### Next.js setup note (one-time)
+
+Next.js's webpack tries to bundle the `ws` package and breaks its
+optional native bindings. Add this once to `next.config.{js,mjs,ts}`:
+
+```js
+// next.config.mjs
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  serverExternalPackages: ['smallestai-vercel-provider', 'ws'],
+};
+export default nextConfig;
+```
+
+And install the optional native deps so `ws` masks frames at native
+speed:
+
+```bash
+npm install bufferutil utf-8-validate
+```
+
+## React hooks (`smallestai-vercel-provider/react`)
+
+Three hooks for client components — none of them call the SDK
+directly, so the API key never reaches the browser. Each pairs with a
+server-side route you wire up.
+
+```tsx
+'use client';
+
+import {
+  useSpeech,
+  useTranscriptionStream,
+  useVoiceClone,
+} from 'smallestai-vercel-provider/react';
+```
+
+### `useSpeech({ apiPath })`
+
+```tsx
+const { audioUrl, isLoading, error, generate, reset } = useSpeech({
+  apiPath: '/api/speak', // your TTS route, returns audio bytes
+});
+
+await generate({ text: 'Hello!', voice: 'sophia' });
+return <audio controls src={audioUrl ?? undefined} />;
+```
+
+### `useTranscriptionStream({ apiPath })`
+
+Pairs with `createTranscriptionStreamSSEResponse()` on the server.
+Auto-accumulates the running transcript from `is_final` frames and
+exposes the latest partial separately.
+
+```tsx
+const {
+  transcript,         // accumulated final transcript
+  partial,            // current in-progress utterance
+  messages,           // every raw frame
+  isStreaming,
+  error,
+  transcribe,
+  cancel,
+  reset,
+} = useTranscriptionStream({ apiPath: '/api/transcribe-stream' });
+
+// kick off
+const finalText = await transcribe(audioBlob);
+
+return (
+  <>
+    <p>{transcript}</p>
+    {partial && <em>{partial}</em>}
+    {isStreaming && <button onClick={cancel}>Stop</button>}
+  </>
+);
+```
+
+### `useVoiceClone({ apiPath })`
+
+Pairs with three server routes (`POST /api/voice-clone` for create,
+`GET` for list, `POST /api/voice-clone/delete`) that mirror calls onto
+`smallestai.voiceClone.{create, list, delete}`.
+
+```tsx
+const { clones, create, remove, refresh, isLoading } = useVoiceClone({
+  apiPath: '/api/voice-clone',
+});
+
+const newClone = await create({
+  file: voiceFile,
+  displayName: 'My voice',
+  language: 'en',
+});
+
+return (
+  <ul>
+    {clones.map(c => (
+      <li key={c.voiceId}>
+        {c.displayName} <button onClick={() => remove(c.voiceId)}>Delete</button>
+      </li>
+    ))}
+  </ul>
+);
+```
 
 ## Voice Cloning
 
@@ -405,13 +538,13 @@ writeFileSync('output.wav', Buffer.from(audio.uint8Array));
 console.log('Saved to output.wav');
 ```
 
-## Roadmap (not in v0.4.0)
+## Roadmap
 
-These are deliberately deferred to a follow-up release — open an issue if you need any of them sooner:
+Future / deferred — open an issue if any of these would unblock you:
 
-- **Auto-reconnect on streaming WS drops** — long-running sessions over flaky networks. Today, `connect()` is a single attempt; reconnect logic lives in your app.
-- **Browser-native streaming** — token-in-query / signed-URL flow so browsers can hit the WS directly without proxying through your server. The `Authorization: Bearer` header is the blocker today.
-- **React hooks** — `useTranscriptionStream`, `useSpeech`, `useVoiceClone` so you don't write the boilerplate around `for await` + ref-cleanup yourself.
+- **Browser-native streaming** — direct browser WebSocket without proxying. Blocked on the platform: native browser `WebSocket` can't set the `Authorization` header, so we'd need a short-lived signed-token endpoint server-side. Until that exists, the SSE-proxy + `useTranscriptionStream` flow is the recommended path (and just as fast in practice).
+- **First-class microphone capture hook** — `useMicrophoneTranscription()` that wraps `getUserMedia` + `MediaRecorder` + `useTranscriptionStream` into one call.
+- **Built-in chunk batching for slow consumers** — backpressure-aware send queue so a chatty mic stream can't outrun the WS.
 
 ## Links
 

@@ -26,4 +26,9 @@ export type {
   SmallestAITranscriptionStreamConfig,
 } from './smallestai-transcription-stream';
 
+export {
+  createTranscriptionStreamSSEResponse,
+  parseTranscriptionStreamSSE,
+} from './smallestai-sse';
+
 export { VERSION } from './version';

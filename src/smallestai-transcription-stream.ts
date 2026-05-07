@@ -49,6 +49,23 @@ export interface SmallestAITranscriptionStreamOptions {
   finalizeOnWords?: boolean;
   /** Default true; format output. */
   format?: boolean;
+
+  // ── Reliability ─────────────────────────────────────────────────────
+  /**
+   * If true, reconnect transparently on unexpected socket drops
+   * (network blip, server restart, idle timeout). The session will
+   * re-open with the same parameters and emit a synthetic
+   * `{ type: 'reconnected', attempt }` message so consumers can react.
+   * Default `false` (preserves single-shot semantics).
+   */
+  autoReconnect?: boolean;
+  /** Max reconnect attempts before giving up. Default 5. */
+  maxReconnectAttempts?: number;
+  /**
+   * Base reconnect delay in ms; doubles per attempt up to 30s.
+   * Default 500.
+   */
+  reconnectBackoffMs?: number;
 }
 
 /**
@@ -79,10 +96,15 @@ export interface SmallestAITranscriptionStreamMessage {
     speaker?: number | string;
   }>;
   redacted_entities?: string[];
-  /** Server-side error frame: `{ type: 'error', message, error }`. */
+  /**
+   * Server frame type (`'transcription'` for normal data) or
+   * SDK-synthesized signal: `'reconnected'` after a reconnect succeeded.
+   */
   type?: string;
   message?: string;
   error?: string;
+  /** Reconnect attempt number (1-based). Only present on `type: 'reconnected'` SDK synthetic frames. */
+  attempt?: number;
 }
 
 const messageSchema = z
@@ -131,6 +153,11 @@ export interface SmallestAITranscriptionStreamConfig {
 /**
  * A streaming Pulse STT session. AsyncIterable: `for await` over messages.
  * Send audio chunks via `sendAudio()`; finalize with `finalize()`; close with `close()`.
+ *
+ * Auto-reconnect (when enabled via options) is transparent: a network
+ * drop triggers backoff + reopen, and a synthetic
+ * `{ type: 'reconnected', attempt }` message lands in the iterator so
+ * consumers can react (e.g., show a "reconnecting…" indicator).
  */
 export class SmallestAITranscriptionStream
   implements AsyncIterable<SmallestAITranscriptionStreamMessage>
@@ -141,6 +168,11 @@ export class SmallestAITranscriptionStream
   private done = false;
   private failure: Error | null = null;
   private openPromise: Promise<void> | null = null;
+  private explicitClose = false;
+  private receivedIsLast = false;
+  private reconnectAttempts = 0;
+  private cachedUrl: string | null = null;
+  private cachedHeaders: Record<string, string> | null = null;
 
   constructor(
     private readonly modelId: SmallestAITranscriptionModelId,
@@ -154,6 +186,14 @@ export class SmallestAITranscriptionStream
    */
   connect(): Promise<void> {
     if (this.openPromise) return this.openPromise;
+    this.openPromise = this.openSocket();
+    return this.openPromise;
+  }
+
+  private buildUrlAndHeaders(): { url: string; headers: Record<string, string> } {
+    if (this.cachedUrl && this.cachedHeaders) {
+      return { url: this.cachedUrl, headers: this.cachedHeaders };
+    }
 
     const baseURL =
       withoutTrailingSlash(this.config.baseURL) ?? 'https://api.smallest.ai';
@@ -194,6 +234,19 @@ export class SmallestAITranscriptionStream
       Authorization: `Bearer ${apiKey}`,
       'User-Agent': `smallest-ai-vercel-provider/${VERSION}`,
     };
+    this.cachedUrl = url;
+    this.cachedHeaders = headers;
+    return { url, headers };
+  }
+
+  /**
+   * Internal: open (or re-open) the WebSocket. Wires up event handlers
+   * including the close handler that triggers reconnect when the close
+   * is unexpected (no `is_last`, no explicit close from the consumer)
+   * and `autoReconnect: true` is set.
+   */
+  private openSocket(): Promise<void> {
+    const { url, headers } = this.buildUrlAndHeaders();
 
     const factory =
       this.config.webSocketFactory ??
@@ -203,8 +256,10 @@ export class SmallestAITranscriptionStream
     const ws = factory(url, headers);
     this.ws = ws;
 
-    this.openPromise = new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
+      let opened = false;
       ws.addEventListener('open', () => {
+        opened = true;
         resolve();
       });
       ws.addEventListener('error', (ev: any) => {
@@ -213,9 +268,13 @@ export class SmallestAITranscriptionStream
             ? ev.message
             : 'Smallest AI WebSocket error';
         const err = new Error(message);
-        if (!this.openPromise) return;
-        this.fail(err);
-        reject(err);
+        if (!opened) {
+          // Initial connect failure — bubble up; reconnect logic only
+          // applies after a successful first connect.
+          this.fail(err);
+          reject(err);
+        }
+        // Post-open errors land in the close handler below.
       });
       ws.addEventListener('message', (ev) => {
         let parsed: unknown;
@@ -232,15 +291,58 @@ export class SmallestAITranscriptionStream
           this.fail(new Error(msg.data.message ?? msg.data.error ?? 'Server error'));
         }
         if (msg.data.is_last === true) {
+          this.receivedIsLast = true;
           this.finish();
         }
       });
       ws.addEventListener('close', () => {
-        this.finish();
+        // Three close paths to disambiguate:
+        //   1. Server emitted is_last → terminal, do not reconnect.
+        //   2. Consumer called close() / closeStream() → terminal.
+        //   3. Anything else (network drop, server-side timeout, 5xx
+        //      after upgrade) → reconnect if enabled, else terminal.
+        if (this.receivedIsLast || this.explicitClose || this.failure) {
+          this.finish();
+          return;
+        }
+        if (this.options.autoReconnect) {
+          this.scheduleReconnect();
+        } else {
+          this.finish();
+        }
       });
     });
+  }
 
-    return this.openPromise;
+  private scheduleReconnect(): void {
+    const max = this.options.maxReconnectAttempts ?? 5;
+    if (this.reconnectAttempts >= max) {
+      this.fail(
+        new Error(
+          `Smallest AI WS reconnect gave up after ${max} attempts; consumer should retry the whole session`,
+        ),
+      );
+      return;
+    }
+    this.reconnectAttempts += 1;
+    const base = this.options.reconnectBackoffMs ?? 500;
+    const delay = Math.min(base * 2 ** (this.reconnectAttempts - 1), 30_000);
+    setTimeout(() => {
+      // Race: consumer may have called close() between the close event
+      // firing and this timeout. Bail out cleanly in that case.
+      if (this.explicitClose || this.done) return;
+      this.openSocket().then(
+        () => {
+          this.push({ type: 'reconnected', attempt: this.reconnectAttempts });
+        },
+        (err) => {
+          // openSocket() already calls fail() on initial-connect
+          // failure; nothing more to do here. But if the underlying
+          // factory threw synchronously we surface it.
+          if (!this.failure) this.fail(err instanceof Error ? err : new Error(String(err)));
+        },
+      );
+    }, delay);
   }
 
   /** Send a chunk of raw audio bytes (per `encoding` + `sampleRate`). */
@@ -273,6 +375,7 @@ export class SmallestAITranscriptionStream
    */
   closeStream(): void {
     if (!this.ws) return;
+    this.explicitClose = true;
     if (this.ws.readyState === 1) {
       this.ws.send(JSON.stringify({ type: 'close_stream' }));
     }
@@ -280,6 +383,7 @@ export class SmallestAITranscriptionStream
 
   /** Close the underlying socket without waiting for a final frame. */
   close(): void {
+    this.explicitClose = true;
     if (this.ws && this.ws.readyState === 1) this.ws.close();
     this.finish();
   }
