@@ -8,9 +8,14 @@ import { z } from 'zod';
 import type { SmallestAIConfig } from './smallestai-config';
 import type { SmallestAITranscriptionModelId } from './smallestai-transcription-options';
 
+// Batch STT (POST /waves/v1/pulse/get_text) — fields the server
+// schema (waves-platform `lightningAsrQuerySchema`) actually accepts.
+// WS-only knobs (itnNormalize, sentenceTimestamps, fullTranscript,
+// finalizeOnWords, maxWords) live on `SmallestAITranscriptionStreamOptions`
+// — they're meaningless on the batch endpoint (server silently strips
+// them), so we don't expose them here.
 const smallestaiTranscriptionProviderOptionsSchema = z.object({
   language: z.string().optional(),
-  // Sent as multipart of query params on /waves/v1/pulse/get_text
   diarize: z.boolean().optional(),
   emotionDetection: z.boolean().optional(),
   genderDetection: z.boolean().optional(),
@@ -32,14 +37,6 @@ const smallestaiTranscriptionProviderOptionsSchema = z.object({
   webhookUrl: z.string().url().optional(),
   webhookMethod: z.enum(['POST', 'GET']).optional(),
   webhookExtra: z.string().optional(),
-  // Streaming/WS-only knobs (forwarded as query params; backend ignores
-  // them on REST today and applies them on WS — we still accept them so
-  // callers can opt-in once REST exposes them).
-  itnNormalize: z.boolean().optional(),
-  sentenceTimestamps: z.boolean().optional(),
-  fullTranscript: z.boolean().optional(),
-  finalizeOnWords: z.boolean().optional(),
-  maxWords: z.number().int().positive().optional(),
 });
 
 export type SmallestAITranscriptionProviderOptions = z.infer<
@@ -149,24 +146,6 @@ export class SmallestAITranscriptionModel implements TranscriptionModelV2 {
     }
     if (smallestaiOptions?.webhookExtra) {
       queryParams.set('webhook_extra', smallestaiOptions.webhookExtra);
-    }
-
-    // Streaming/WS-only knobs — forwarded for forward-compat. Server's
-    // batch route currently strips unknown keys silently.
-    if (smallestaiOptions?.itnNormalize !== undefined) {
-      setBool(queryParams, 'itn_normalize', smallestaiOptions.itnNormalize);
-    }
-    if (smallestaiOptions?.sentenceTimestamps !== undefined) {
-      setBool(queryParams, 'sentence_timestamps', smallestaiOptions.sentenceTimestamps);
-    }
-    if (smallestaiOptions?.fullTranscript !== undefined) {
-      setBool(queryParams, 'full_transcript', smallestaiOptions.fullTranscript);
-    }
-    if (smallestaiOptions?.finalizeOnWords !== undefined) {
-      setBool(queryParams, 'finalize_on_words', smallestaiOptions.finalizeOnWords);
-    }
-    if (smallestaiOptions?.maxWords !== undefined) {
-      queryParams.set('max_words', String(smallestaiOptions.maxWords));
     }
 
     const url = this.config.url({

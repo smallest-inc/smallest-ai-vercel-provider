@@ -57,9 +57,12 @@ export class SmallestAISpeechModel implements SpeechModelV2 {
 
     const warnings: Awaited<ReturnType<SpeechModelV2['doGenerate']>>['warnings'] = [];
 
+    // Server accepts ['wav', 'ulaw', 'alaw', 'pcm', 'mp3'] (see waves-platform
+    // lightning-v3.schema.ts). The SDK additionally accepts 'mulaw' as a
+    // friendlier alias and normalizes it to 'ulaw' before POST.
     const normalizedOutputFormat =
-      smallestaiOptions?.outputFormat === 'ulaw'
-        ? 'mulaw'
+      smallestaiOptions?.outputFormat === 'mulaw'
+        ? 'ulaw'
         : smallestaiOptions?.outputFormat;
     const outputFormat = normalizedOutputFormat ?? 'wav';
 

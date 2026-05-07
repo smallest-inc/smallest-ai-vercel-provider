@@ -21,3 +21,22 @@ export const DEFAULT_LIGHTNING_MODEL = 'lightning-v3.1' as const;
 export type SmallestAISpeechModelId =
   | typeof DEFAULT_LIGHTNING_MODEL
   | (string & {});
+
+/**
+ * Languages supported by `lightning-v3.1`, mirroring the server enum
+ * (`API_LIGHTNING_V3_1_LANGUAGES` in `lightning-v3.schema.ts`). Includes
+ * `'auto'` for automatic language detection (the v3.1 default).
+ */
+export const LIGHTNING_V3_1_LANGUAGES = [
+  'auto',
+  'en', 'hi', 'mr', 'kn', 'ta', 'bn', 'gu',
+  'de', 'fr', 'es', 'it', 'pl', 'nl', 'ru',
+  'ar', 'he', 'sv', 'ml', 'te', 'pt', 'pa', 'or',
+] as const;
+
+/**
+ * Type narrowing for `lightning-v3.1` callers. Use as the `language`
+ * field on `generateSpeech({ ... })` to get autocomplete + a type
+ * error on unsupported codes.
+ */
+export type LightningV31Language = typeof LIGHTNING_V3_1_LANGUAGES[number];

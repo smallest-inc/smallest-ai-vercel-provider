@@ -6,8 +6,12 @@ export type {
 
 export {
   DEFAULT_LIGHTNING_MODEL,
+  LIGHTNING_V3_1_LANGUAGES,
 } from './smallestai-speech-options';
-export type { SmallestAISpeechModelId } from './smallestai-speech-options';
+export type {
+  SmallestAISpeechModelId,
+  LightningV31Language,
+} from './smallestai-speech-options';
 export type { SmallestAISpeechProviderOptions } from './smallestai-speech-model';
 
 export type { SmallestAITranscriptionModelId } from './smallestai-transcription-options';
