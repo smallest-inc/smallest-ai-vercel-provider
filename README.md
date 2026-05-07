@@ -229,6 +229,10 @@ for await (const msg of stream) {
 }
 ```
 
+`maxReconnectAttempts` counts **consecutive** failures — the counter resets to zero after every successful reconnect, so a multi-hour stream that survives one blip per hour does not exhaust its retry budget across the whole session. Reconnect only fires on **unexpected** closes; `is_last`, an explicit `closeStream()`, and server-emitted error frames all terminate cleanly without retry.
+
+The optional 3rd argument to `transcriptionStream(modelId, options, config)` lets you override per-session connection config — `auth: 'query'` for browser-native streaming, `signedUrl` for production browser flows, `signedUrlTimeoutMs`, `allowedSignedHosts`, `suppressInsecureAuthWarning`, or a custom `webSocketFactory`. Provider-level `apiKey` and `baseURL` are inherited unless overridden.
+
 ### One-shot helper for pre-recorded audio
 
 ```ts
@@ -394,10 +398,12 @@ If you're shipping a React app, skip the manual fetch + parse:
   transcription](#mic-capture--transcription-with-react) section
   below.
 
-### Next.js setup note (one-time)
+### Next.js setup note (one-time, only for server-side header-mode users)
 
-Next.js's webpack tries to bundle the `ws` package and breaks its
-optional native bindings. Add this once to `next.config.{js,mjs,ts}`:
+If your Next.js server uses the default `auth: 'header'` flow (the
+typical SSE-proxy pattern), Next's webpack tries to bundle the `ws`
+package and breaks its optional native bindings. Add this once to
+`next.config.{js,mjs,ts}`:
 
 ```js
 // next.config.mjs
@@ -414,6 +420,11 @@ speed:
 ```bash
 npm install bufferutil utf-8-validate
 ```
+
+> Browser-only consumers using `auth: 'query'` or `signedUrl` don't
+> need this setup — the SDK lazy-loads `ws` only when the
+> `Authorization` header path is needed, so browser bundles never pull
+> in the `ws` package or its Node-only deps.
 
 ## React hooks (`smallestai-vercel-provider/react`)
 
