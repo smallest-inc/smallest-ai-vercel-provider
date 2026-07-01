@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * One-shot TTS hook — calls a server route that returns audio bytes
- * (typically using `experimental_generateSpeech` + the smallestai
+ * (typically using `generateSpeech` + the smallestai
  * provider). The hook does not call the smallestai package directly,
  * so the API key never reaches the browser.
  *

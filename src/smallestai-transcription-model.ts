@@ -8,8 +8,8 @@ import { z } from 'zod';
 import type { SmallestAIConfig } from './smallestai-config';
 import type { SmallestAITranscriptionModelId } from './smallestai-transcription-options';
 
-// Batch STT (POST /waves/v1/pulse/get_text) — fields the server
-// schema (waves-platform `lightningAsrQuerySchema`) actually accepts.
+// Batch STT (POST /waves/v1/stt/?model=<pulse|pulse-pro>) — fields the
+// server schema actually accepts as query params. `model` is required.
 // WS-only knobs (itnNormalize, sentenceTimestamps, fullTranscript,
 // finalizeOnWords, maxWords) live on `SmallestAITranscriptionStreamOptions`
 // — they're meaningless on the batch endpoint (server silently strips
@@ -110,7 +110,9 @@ export class SmallestAITranscriptionModel implements TranscriptionModelV2 {
 
     const language = smallestaiOptions?.language ?? 'en';
 
-    const queryParams = new URLSearchParams({ language });
+    // `model` is required on the unified STT route; both 'pulse' and
+    // the batch-only 'pulse-pro' are valid here.
+    const queryParams = new URLSearchParams({ model: this.modelId, language });
 
     setBool(queryParams, 'word_timestamps', smallestaiOptions?.wordTimestamps ?? true);
     setBool(queryParams, 'diarize', smallestaiOptions?.diarize ?? false);
@@ -149,7 +151,7 @@ export class SmallestAITranscriptionModel implements TranscriptionModelV2 {
     }
 
     const url = this.config.url({
-      path: `/waves/v1/${this.modelId}/get_text?${queryParams.toString()}`,
+      path: `/waves/v1/stt/?${queryParams.toString()}`,
       modelId: this.modelId,
     });
 
@@ -190,7 +192,11 @@ export class SmallestAITranscriptionModel implements TranscriptionModelV2 {
       })) ?? [];
 
     const lastWord = parsed.words?.at(-1);
-    const durationInSeconds = parsed.audio_length ?? lastWord?.end ?? undefined;
+    const durationInSeconds =
+      parsed.audio_length ??
+      parsed.metadata?.duration ??
+      lastWord?.end ??
+      undefined;
 
     const warnings: Awaited<
       ReturnType<TranscriptionModelV2['doGenerate']>

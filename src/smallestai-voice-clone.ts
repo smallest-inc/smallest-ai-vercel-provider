@@ -17,9 +17,9 @@ export interface VoiceCloneCreateOptions {
   accent?: string;
   /** Tags. Sent as a comma-joined string per the server schema. */
   tags?: string[];
-  /** ISO 639-1 language code from the lightning-v3.1 supported list. */
+  /** ISO 639-1 language code from the lightning_v3.1 supported list. */
   language?: LightningV31Language;
-  /** Defaults to `'lightning-v3.1'` server-side. `'lightning-v2'` is rejected. */
+  /** Defaults to `'lightning_v3.1'` server-side (the only cloning-capable model). */
   model?: string;
   /** Override request headers. */
   headers?: Record<string, string>;

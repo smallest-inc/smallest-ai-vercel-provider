@@ -28,9 +28,10 @@ export interface SmallestAIProvider {
 
   /**
    * Open a streaming WebSocket transcription session against
-   * `/waves/v1/{modelId}/get_text`. The Vercel AI SDK's
+   * `/waves/v1/stt/live`. The Vercel AI SDK's
    * `TranscriptionModelV2` is one-shot, so streaming lives here as a
-   * separate API. Every WS-only feature flag is supported:
+   * separate API. Only `pulse` streams — `pulse-pro` is batch-only.
+   * Every WS-only feature flag is supported:
    * `itnNormalize`, `sentenceTimestamps`, `fullTranscript`,
    * `finalizeOnWords`, `maxWords`, etc.
    *

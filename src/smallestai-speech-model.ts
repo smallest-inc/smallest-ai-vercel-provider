@@ -10,6 +10,12 @@ import type { SmallestAIConfig } from './smallestai-config';
 import type { SmallestAISpeechModelId } from './smallestai-speech-options';
 import { smallestaiFailedResponseHandler } from './smallestai-error';
 
+// Fields accepted by the unified `POST /waves/v1/tts` route
+// (waves-platform tts schema): text, voice_id, model, sample_rate,
+// speed, output_format, pronunciation_dicts. The legacy per-model
+// `get_speech` route's extra knobs (similarity, enhancement,
+// add_wav_header, save_history) are not part of the unified schema and
+// were silently stripped — removed here so the surface matches the API.
 const smallestaiSpeechProviderOptionsSchema = z.object({
   sampleRate: z
     .union([
@@ -19,11 +25,7 @@ const smallestaiSpeechProviderOptionsSchema = z.object({
       z.literal(44100),
     ])
     .optional(),
-  similarity: z.number().min(0).max(1).optional(),
-  enhancement: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
   outputFormat: z.enum(['pcm', 'mp3', 'wav', 'mulaw', 'alaw', 'ulaw']).optional(),
-  addWavHeader: z.boolean().optional(),
-  saveHistory: z.boolean().optional(),
   pronunciationDicts: z.array(z.string()).optional(),
 });
 
@@ -69,29 +71,18 @@ export class SmallestAISpeechModel implements SpeechModelV2 {
     const requestBody: Record<string, unknown> = {
       text,
       voice_id: voice ?? 'sophia',
+      model: this.modelId,
       sample_rate: smallestaiOptions?.sampleRate ?? 44100,
       speed: speed ?? 1.0,
       language: language ?? 'auto',
       output_format: outputFormat,
     };
 
-    if (smallestaiOptions?.addWavHeader !== undefined) {
-      requestBody.add_wav_header = smallestaiOptions.addWavHeader;
-    }
-    if (smallestaiOptions?.saveHistory !== undefined) {
-      requestBody.save_history = smallestaiOptions.saveHistory;
-    }
     if (
       smallestaiOptions?.pronunciationDicts &&
       smallestaiOptions.pronunciationDicts.length > 0
     ) {
       requestBody.pronunciation_dicts = smallestaiOptions.pronunciationDicts;
-    }
-    if (smallestaiOptions?.similarity !== undefined) {
-      requestBody.similarity = smallestaiOptions.similarity;
-    }
-    if (smallestaiOptions?.enhancement !== undefined) {
-      requestBody.enhancement = smallestaiOptions.enhancement;
     }
 
     if (options.outputFormat && options.outputFormat !== outputFormat) {
@@ -107,7 +98,7 @@ export class SmallestAISpeechModel implements SpeechModelV2 {
         type: 'unsupported-setting' as const,
         setting: 'instructions' as const,
         details:
-          "Smallest AI ignores the Vercel AI SDK 'instructions' field on lightning-v3.1.",
+          "Smallest AI ignores the Vercel AI SDK 'instructions' field on Lightning models.",
       });
     }
 
@@ -117,7 +108,7 @@ export class SmallestAISpeechModel implements SpeechModelV2 {
       rawValue: rawResponse,
     } = await postJsonToApi({
       url: this.config.url({
-        path: `/waves/v1/${this.modelId}/get_speech`,
+        path: `/waves/v1/tts`,
         modelId: this.modelId,
       }),
       headers: combineHeaders(this.config.headers(), headers),

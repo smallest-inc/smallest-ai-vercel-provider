@@ -6,6 +6,7 @@ export type {
 
 export {
   DEFAULT_LIGHTNING_MODEL,
+  LIGHTNING_V3_1_PRO_MODEL,
   LIGHTNING_V3_1_LANGUAGES,
 } from './smallestai-speech-options';
 export type {
