@@ -1,4 +1,4 @@
-import type { SpeechModelV2 } from '@ai-sdk/provider';
+import type { SpeechModelV4 } from '@ai-sdk/provider';
 import {
   combineHeaders,
   createBinaryResponseHandler,
@@ -33,8 +33,8 @@ export type SmallestAISpeechProviderOptions = z.infer<
   typeof smallestaiSpeechProviderOptionsSchema
 >;
 
-export class SmallestAISpeechModel implements SpeechModelV2 {
-  readonly specificationVersion = 'v2' as const;
+export class SmallestAISpeechModel implements SpeechModelV4 {
+  readonly specificationVersion = 'v4' as const;
 
   get provider(): string {
     return this.config.provider;
@@ -46,8 +46,8 @@ export class SmallestAISpeechModel implements SpeechModelV2 {
   ) {}
 
   async doGenerate(
-    options: Parameters<SpeechModelV2['doGenerate']>[0],
-  ): Promise<Awaited<ReturnType<SpeechModelV2['doGenerate']>>> {
+    options: Parameters<SpeechModelV4['doGenerate']>[0],
+  ): Promise<Awaited<ReturnType<SpeechModelV4['doGenerate']>>> {
     const { text, voice, speed, language, providerOptions, headers, abortSignal } =
       options;
 
@@ -57,7 +57,7 @@ export class SmallestAISpeechModel implements SpeechModelV2 {
       schema: smallestaiSpeechProviderOptionsSchema,
     });
 
-    const warnings: Awaited<ReturnType<SpeechModelV2['doGenerate']>>['warnings'] = [];
+    const warnings: Awaited<ReturnType<SpeechModelV4['doGenerate']>>['warnings'] = [];
 
     // Server accepts ['wav', 'ulaw', 'alaw', 'pcm', 'mp3'] (see waves-platform
     // lightning-v3.schema.ts). The SDK additionally accepts 'mulaw' as a
@@ -87,16 +87,16 @@ export class SmallestAISpeechModel implements SpeechModelV2 {
 
     if (options.outputFormat && options.outputFormat !== outputFormat) {
       warnings.push({
-        type: 'unsupported-setting' as const,
-        setting: 'outputFormat' as const,
+        type: 'unsupported' as const,
+        feature: 'outputFormat' as const,
         details: `Requested format '${options.outputFormat}' ignored. Use providerOptions.smallestai.outputFormat instead.`,
       });
     }
 
     if (options.instructions) {
       warnings.push({
-        type: 'unsupported-setting' as const,
-        setting: 'instructions' as const,
+        type: 'unsupported' as const,
+        feature: 'instructions' as const,
         details:
           "Smallest AI ignores the Vercel AI SDK 'instructions' field on Lightning models.",
       });

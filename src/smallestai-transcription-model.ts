@@ -1,4 +1,4 @@
-import type { TranscriptionModelV2 } from '@ai-sdk/provider';
+import type { TranscriptionModelV4 } from '@ai-sdk/provider';
 import {
   combineHeaders,
   convertBase64ToUint8Array,
@@ -82,8 +82,8 @@ const setBool = (params: URLSearchParams, key: string, value: boolean) => {
   params.set(key, value ? 'true' : 'false');
 };
 
-export class SmallestAITranscriptionModel implements TranscriptionModelV2 {
-  readonly specificationVersion = 'v2' as const;
+export class SmallestAITranscriptionModel implements TranscriptionModelV4 {
+  readonly specificationVersion = 'v4' as const;
 
   get provider(): string {
     return this.config.provider;
@@ -95,8 +95,8 @@ export class SmallestAITranscriptionModel implements TranscriptionModelV2 {
   ) {}
 
   async doGenerate(
-    options: Parameters<TranscriptionModelV2['doGenerate']>[0],
-  ): Promise<Awaited<ReturnType<TranscriptionModelV2['doGenerate']>>> {
+    options: Parameters<TranscriptionModelV4['doGenerate']>[0],
+  ): Promise<Awaited<ReturnType<TranscriptionModelV4['doGenerate']>>> {
     const { audio, mediaType, providerOptions, headers, abortSignal } = options;
 
     const smallestaiOptions = await parseProviderOptions({
@@ -199,12 +199,13 @@ export class SmallestAITranscriptionModel implements TranscriptionModelV2 {
       undefined;
 
     const warnings: Awaited<
-      ReturnType<TranscriptionModelV2['doGenerate']>
+      ReturnType<TranscriptionModelV4['doGenerate']>
     >['warnings'] = [];
 
     if (smallestaiOptions?.ageDetection) {
       warnings.push({
-        type: 'other' as const,
+        type: 'deprecated' as const,
+        setting: 'ageDetection',
         message:
           "providerOptions.smallestai.ageDetection has been removed from the Smallest AI ASR API and will be ignored.",
       });

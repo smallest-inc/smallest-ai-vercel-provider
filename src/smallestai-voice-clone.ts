@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import type { SmallestAIConfig } from './smallestai-config';
-import type { LightningV31Language } from './smallestai-speech-options';
+import {
+  DEFAULT_LIGHTNING_MODEL,
+  type LightningV31Language,
+} from './smallestai-speech-options';
 
 export interface VoiceCloneCreateOptions {
   /** Audio file bytes (wav/mp3/webm/mp4). */
@@ -19,7 +22,10 @@ export interface VoiceCloneCreateOptions {
   tags?: string[];
   /** ISO 639-1 language code from the lightning_v3.1 supported list. */
   language?: LightningV31Language;
-  /** Defaults to `'lightning_v3.1'` server-side (the only cloning-capable model). */
+  /**
+   * Cloning model. Only `lightning_v3.1` supports voice cloning, so it
+   * is the default and there is normally no reason to change it.
+   */
   model?: string;
   /** Override request headers. */
   headers?: Record<string, string>;
@@ -127,7 +133,9 @@ export class SmallestAIVoiceCloneClient {
     if (options.tags && options.tags.length > 0)
       form.set('tags', options.tags.join(','));
     if (options.language) form.set('language', options.language);
-    if (options.model) form.set('model', options.model);
+    // Voice cloning runs on lightning_v3.1 (the only cloning-capable
+    // model); send it explicitly so intent is clear and stable.
+    form.set('model', options.model ?? DEFAULT_LIGHTNING_MODEL);
 
     // Build headers WITHOUT Content-Type so fetch sets the multipart boundary.
     const baseHeaders = this.config.headers();
@@ -229,18 +237,22 @@ export class SmallestAIVoiceCloneClient {
   /**
    * Delete a voice clone by `voiceId`.
    *
-   * Routed to `DELETE /waves/v1/lightning-large/` because that's the
-   * endpoint that accepts Bearer API key auth. The newer
-   * `POST /waves/v1/voice-cloning/delete` requires a console JWT today;
-   * once the server unifies auth, the SDK can repoint without a
-   * caller-visible change.
+   * Routed to `POST /waves/v1/voice-cloning/delete` — the canonical
+   * voice-cloning delete endpoint. (The old `/waves/v1/lightning-large/`
+   * route is retired and now returns HTTP 410.)
+   *
+   * Auth note: this endpoint is currently gated on a console session
+   * token rather than the Waves API key, so a Bearer-API-key call may
+   * return 401 until the server accepts API keys here. If you hold a
+   * console JWT, pass it via `opts.headers` (e.g.
+   * `{ Authorization: 'Bearer <jwt>' }`) to override the provider auth.
    */
   async delete(
     voiceId: string,
     opts?: { headers?: Record<string, string>; abortSignal?: AbortSignal },
   ): Promise<{ success: boolean; voiceId?: string }> {
     const url = this.config.url({
-      path: '/waves/v1/lightning-large/',
+      path: '/waves/v1/voice-cloning/delete',
       modelId: 'voice-clone',
     });
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -251,7 +263,7 @@ export class SmallestAIVoiceCloneClient {
 
     const fetchFn = this.config.fetch ?? fetch;
     const response = await fetchFn(url, {
-      method: 'DELETE',
+      method: 'POST',
       headers,
       body: JSON.stringify({ voiceId }),
       signal: opts?.abortSignal,
