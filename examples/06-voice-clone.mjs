@@ -4,7 +4,7 @@
 // First run 01-tts-basic.mjs (writes /tmp/example-tts.wav), then:
 //   SMALLEST_API_KEY=... node examples/06-voice-clone.mjs
 
-import { experimental_generateSpeech as generateSpeech } from 'ai';
+import { generateSpeech } from 'ai';
 import {
   smallestai,
   DEFAULT_LIGHTNING_MODEL,
@@ -21,7 +21,7 @@ const clone = await smallestai.voiceClone.create({
   displayName: `e2e-clone-${Date.now()}`,
   description: 'SDK example clone',
   language: 'en',
-  model: 'lightning-v3.1',
+  model: 'lightning_v3.1',
 });
 console.log(`  voiceId=${clone.voiceId}, status=${clone.status}`);
 

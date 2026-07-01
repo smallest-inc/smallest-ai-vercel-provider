@@ -14,9 +14,9 @@ npm run build  # examples import from ../dist/
 
 | File | What it shows |
 |---|---|
-| [`01-tts-basic.mjs`](./01-tts-basic.mjs) | TTS lightning-v3.1 (default), saves WAV to `/tmp/example-tts.wav` |
-| [`02-tts-options.mjs`](./02-tts-options.mjs) | TTS with `similarity` / `enhancement` / `addWavHeader` / `pronunciationDicts`, `mulaw`-as-alias for `ulaw` |
-| [`03-stt-batch.mjs`](./03-stt-batch.mjs) | Batch STT with `redactPii`, `redactPci`, `numerals`, `keywords`, `diarize`, `emotionDetection` |
+| [`01-tts-basic.mjs`](./01-tts-basic.mjs) | TTS lightning_v3.1 (default), saves WAV to `/tmp/example-tts.wav` |
+| [`02-tts-options.mjs`](./02-tts-options.mjs) | TTS with `sampleRate` / `outputFormat` / `pronunciationDicts`, `mulaw`-as-alias for `ulaw` |
+| [`03-stt-batch.mjs`](./03-stt-batch.mjs) | Batch STT (`pulse`; swap in `pulse-pro` for English) with `redactPii`, `redactPci`, `numerals`, `keywords`, `diarize`, `emotionDetection` |
 | [`04-stt-streaming.mjs`](./04-stt-streaming.mjs) | Streaming WS STT — incremental partials + finals, accumulating transcript client-side |
 | [`05-stt-streaming-oneshot.mjs`](./05-stt-streaming-oneshot.mjs) | One-shot helper for pre-recorded audio via streaming |
 | [`06-voice-clone.mjs`](./06-voice-clone.mjs) | Voice clone create → list → use in TTS → delete (full lifecycle) |

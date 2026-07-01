@@ -6,8 +6,8 @@ description: 'Learn how to use the Smallest AI provider for the AI SDK.'
 # Smallest AI Provider
 
 The [Smallest AI provider](https://github.com/smallest-inc/smallest-ai-vercel-provider)
-for the AI SDK contains support for text-to-speech (Lightning v3.1) and
-speech-to-text (Pulse) models.
+for the AI SDK contains support for text-to-speech (Lightning v3.1 and
+Lightning v3.1 Pro) and speech-to-text (Pulse and Pulse Pro) models.
 
 For more information about Smallest AI, see the
 [Smallest AI Documentation](https://docs.smallest.ai).
@@ -57,7 +57,7 @@ package also exports `DEFAULT_LIGHTNING_MODEL` so you don't have to hard-code
 the model id:
 
 ```ts
-import { experimental_generateSpeech as generateSpeech } from 'ai';
+import { generateSpeech } from 'ai';
 import {
   smallestai,
   DEFAULT_LIGHTNING_MODEL,
@@ -77,12 +77,17 @@ const { audio } = await generateSpeech({
 
 | Model ID | Description |
 | --- | --- |
-| `lightning-v3.1` | 44.1 kHz, natural expressive speech, sub-100ms latency, 22 languages with auto-detect |
+| `lightning_v3.1` | Default. 44.1 kHz, natural expressive speech, sub-100ms latency, 12 languages with auto-detect, voice cloning supported |
+| `lightning_v3.1_pro` | Premium broadcast-quality pool (English + Hindi), American / British / Indian accents. No cloning |
 
 ### Voices
 
-Smallest AI provides 80+ voices across multiple languages and accents.
-Some popular voices include:
+Smallest AI provides 200+ voices across multiple languages and accents.
+Pass any catalog `voice` as a string, and **pair it with its pool** —
+standard voices use `lightning_v3.1`, Pro voices require
+`lightning_v3.1_pro`.
+
+Standard pool (`lightning_v3.1`):
 
 | Voice | Gender | Accent | Best For |
 | --- | --- | --- | --- |
@@ -90,7 +95,9 @@ Some popular voices include:
 | `robert` | Male | American | Professional, reports |
 | `advika` | Female | Indian | Hindi, code-switching |
 | `vivaan` | Male | Indian | Bilingual English/Hindi |
-| `camilla` | Female | Mexican/Latin | Spanish content |
+| `camilla` | Female | Spanish | Spanish content |
+
+Pro pool (`lightning_v3.1_pro`): `meher` (Indian), `sophie` (British), `blake` (American), and more.
 
 ### Provider Options
 
@@ -103,12 +110,8 @@ const { audio } = await generateSpeech({
   voice: 'robert',
   providerOptions: {
     smallestai: {
-      sampleRate: 44100,         // 8000 | 16000 | 24000 | 44100
-      outputFormat: 'mp3',       // pcm | mp3 | wav | mulaw | alaw
-      similarity: 0.5,           // voice similarity (0–1)
-      enhancement: 1,            // enhancement level (0 | 1 | 2)
-      addWavHeader: false,
-      saveHistory: false,
+      sampleRate: 24000,         // 8000 | 16000 | 24000 | 44100
+      outputFormat: 'mp3',       // pcm | mp3 | wav | mulaw (→ ulaw) | alaw | ulaw
       pronunciationDicts: ['<dict-id>'],
     },
   },
@@ -119,8 +122,13 @@ const { audio } = await generateSpeech({
 
 You can create Smallest AI transcription models using the `.transcription()` method:
 
+| Model ID | Languages | Notes |
+| --- | --- | --- |
+| `pulse` | 38 (auto-detect) | Batch and WebSocket streaming (64 ms TTFT) |
+| `pulse-pro` | English only | Batch/pre-recorded only — leaderboard-ranked accuracy; no streaming |
+
 ```ts
-import { experimental_transcribe as transcribe } from 'ai';
+import { transcribe } from 'ai';
 import { smallestai } from 'smallestai-vercel-provider';
 import { readFileSync } from 'fs';
 
@@ -157,11 +165,6 @@ const result = await transcribe({
 
       // Keyword boosting (max 100; "WORD:INTENSIFIER")
       keywords: ['NVIDIA:5', 'Jensen:4'],
-
-      // Streaming/WS-only knobs (forwarded for forward-compat)
-      itnNormalize: true,
-      sentenceTimestamps: true,
-      fullTranscript: true,
 
       // Async webhook delivery
       webhookUrl: 'https://example.com/asr-webhook',

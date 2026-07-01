@@ -39,7 +39,7 @@ export function RecorderClient() {
       file,
       displayName: cloneName,
       language: 'en',
-      model: 'lightning-v3.1',
+      model: 'lightning_v3.1',
     });
   };
 

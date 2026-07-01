@@ -1,4 +1,4 @@
-import { experimental_generateSpeech as generateSpeech } from 'ai';
+import { generateSpeech } from 'ai';
 import {
   smallestai,
   DEFAULT_LIGHTNING_MODEL,

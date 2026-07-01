@@ -2,7 +2,7 @@
 
 A complete Next.js app skeleton that wires every SDK feature into the right server/client boundary:
 
-- **TTS proxy** — `app/api/speak/route.ts` calls `experimental_generateSpeech`, returns audio bytes. Browser uses `useSpeech()`.
+- **TTS proxy** — `app/api/speak/route.ts` calls `generateSpeech`, returns audio bytes. Browser uses `useSpeech()`.
 - **Streaming STT proxy** — `app/api/transcribe-stream/route.ts` wraps `smallestai.transcriptionStream(...)` in `createTranscriptionStreamSSEResponse(...)`. Browser uses `useTranscriptionStream()` which decodes the SSE.
 - **Voice cloning proxy** — `app/api/voice-clone/route.ts` (POST + GET) and `app/api/voice-clone/delete/route.ts` mirror calls onto `smallestai.voiceClone.{create, list, delete}`. Browser uses `useVoiceClone()`.
 - **Client component** — `app/page-components/RecorderClient.tsx` shows the three hooks in action.

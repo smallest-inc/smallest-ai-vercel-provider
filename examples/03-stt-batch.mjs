@@ -3,12 +3,14 @@
 // First run 01-tts-basic.mjs (writes /tmp/example-tts.wav), then:
 //   SMALLEST_API_KEY=... node examples/03-stt-batch.mjs
 
-import { experimental_transcribe as transcribe } from 'ai';
+import { transcribe } from 'ai';
 import { smallestai } from '../dist/index.mjs';
 import { readFileSync } from 'node:fs';
 
 const audioBuffer = readFileSync('/tmp/example-tts.wav');
 
+// 'pulse' = 38 languages + streaming. For max-accuracy English batch
+// transcription, swap in smallestai.transcription('pulse-pro').
 const { text, segments, durationInSeconds, warnings } = await transcribe({
   model: smallestai.transcription('pulse'),
   audio: audioBuffer,

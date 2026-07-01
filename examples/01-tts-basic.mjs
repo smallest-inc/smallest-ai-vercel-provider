@@ -1,9 +1,9 @@
-// examples/01-tts-basic.mjs — Basic TTS (lightning-v3.1, save WAV)
+// examples/01-tts-basic.mjs — Basic TTS (lightning_v3.1, save WAV)
 //
 // Run from package root after `npm run build`:
 //   SMALLEST_API_KEY=... node examples/01-tts-basic.mjs
 
-import { experimental_generateSpeech as generateSpeech } from 'ai';
+import { generateSpeech } from 'ai';
 import {
   smallestai,
   DEFAULT_LIGHTNING_MODEL,
