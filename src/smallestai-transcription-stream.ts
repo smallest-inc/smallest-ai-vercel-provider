@@ -396,7 +396,10 @@ export class SmallestAITranscriptionStream
       validateSignedUrl(url, expectedHost, this.config.allowedSignedHosts ?? []);
       return {
         url,
-        headers: { 'User-Agent': `smallest-ai-vercel-provider/${VERSION}` },
+        headers: {
+          'User-Agent': `smallest-ai-vercel-provider/${VERSION}`,
+          'X-Source': 'vercel-sdk',
+        },
       };
     }
 
@@ -456,9 +459,13 @@ export class SmallestAITranscriptionStream
 
     // Headers only carry auth in 'header' mode. 'query' mode skips the
     // Authorization header so native WebSocket can be used in the
-    // browser without trying (and failing) to set headers.
+    // browser without trying (and failing) to set headers. (Native
+    // WebSocket in the browser can't set ANY custom header, including
+    // User-Agent / X-Source below — those only take effect when the
+    // `ws` package is actually used, i.e. Node 'header' mode.)
     const headers: Record<string, string> = {
       'User-Agent': `smallest-ai-vercel-provider/${VERSION}`,
+      'X-Source': 'vercel-sdk',
     };
     if (auth === 'header') {
       headers.Authorization = `Bearer ${apiKey}`;
