@@ -25,7 +25,7 @@ async function loadWsCtor(): Promise<WSCtor> {
 /**
  * Options for `smallestai.transcriptionStream(modelId, opts)`.
  * Mirrors the WS query parameters accepted by waves-platform at
- * `/waves/v1/pulse/get_text` (see `pulse.asr.schema.ts`).
+ * `/waves/v1/stt/live` (Pulse realtime; `model` is required).
  */
 export interface SmallestAITranscriptionStreamOptions {
   // ── Audio configuration ─────────────────────────────────────────────
@@ -354,6 +354,18 @@ export class SmallestAITranscriptionStream
    * Idempotent — calling twice returns the same Promise.
    */
   connect(): Promise<void> {
+    // 'pulse-pro' is batch/pre-recorded only — it has no realtime
+    // streaming worker, so the WS endpoint rejects it. Fail fast with a
+    // clear message rather than opening a socket that 400s server-side.
+    if (this.modelId === 'pulse-pro') {
+      return Promise.reject(
+        new Error(
+          "Smallest AI 'pulse-pro' is a batch-only model with no streaming " +
+            "worker. Use smallestai.transcription('pulse-pro') for " +
+            "pre-recorded audio, or 'pulse' for realtime streaming.",
+        ),
+      );
+    }
     if (this.openPromise) return this.openPromise;
     this.openPromise = this.openSocket();
     return this.openPromise;
@@ -416,6 +428,9 @@ export class SmallestAITranscriptionStream
       params.set('api_key', apiKey);
     }
 
+    // `model` is a required query param on the realtime STT route.
+    params.set('model', this.modelId);
+
     if (o.language) params.set('language', o.language);
     if (o.encoding) params.set('encoding', o.encoding);
     if (o.sampleRate) params.set('sample_rate', String(o.sampleRate));
@@ -437,7 +452,7 @@ export class SmallestAITranscriptionStream
     if (o.maxWords !== undefined) params.set('max_words', String(o.maxWords));
     if (o.finalizeOnWords !== undefined) setBool(params, 'finalize_on_words', o.finalizeOnWords);
 
-    const url = `${wsBase}/waves/v1/${this.modelId}/get_text?${params.toString()}`;
+    const url = `${wsBase}/waves/v1/stt/live?${params.toString()}`;
 
     // Headers only carry auth in 'header' mode. 'query' mode skips the
     // Authorization header so native WebSocket can be used in the

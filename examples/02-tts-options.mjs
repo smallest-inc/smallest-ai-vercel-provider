@@ -2,7 +2,7 @@
 //
 //   SMALLEST_API_KEY=... node examples/02-tts-options.mjs
 
-import { experimental_generateSpeech as generateSpeech } from 'ai';
+import { generateSpeech } from 'ai';
 import {
   smallestai,
   DEFAULT_LIGHTNING_MODEL,
@@ -11,17 +11,13 @@ import { writeFileSync } from 'node:fs';
 
 const { audio, warnings } = await generateSpeech({
   model: smallestai.speech(DEFAULT_LIGHTNING_MODEL),
-  text: 'This is robert reading at a slightly higher similarity setting.',
+  text: 'This is robert reading with custom output options.',
   voice: 'robert',
   speed: 1.0,
   providerOptions: {
     smallestai: {
-      sampleRate: 44100,        // 8000 | 16000 | 24000 | 44100
-      similarity: 0.5,          // 0–1
-      enhancement: 1,           // 0 | 1 | 2
-      outputFormat: 'mp3',      // pcm | mp3 | wav | mulaw | alaw
-      addWavHeader: false,
-      saveHistory: false,
+      sampleRate: 24000,        // 8000 | 16000 | 24000 | 44100
+      outputFormat: 'mp3',      // pcm | mp3 | wav | mulaw (→ ulaw) | alaw | ulaw
       // pronunciationDicts: ['<dict-id-1>', '<dict-id-2>'],
     },
   },

@@ -53,14 +53,13 @@ const diffForPrompt = prDiff.length > TRUNC ? prDiff.slice(0, TRUNC) + '\n…[tr
 const SYSTEM = `You audit upstream backend PRs for impact on a downstream Vercel AI SDK
 provider package (smallestai-vercel-provider). The SDK exposes:
 
-  - TTS via SpeechModelV2 → POST /waves/v1/{lightning-v3.1|lightning-v3.2}/get_speech
-    Provider options surface: text, voice_id, speed, language, sample_rate,
-    output_format, similarity, enhancement, add_wav_header, save_history,
-    pronunciation_dicts, instruction, enhance_breathing, plus v3.2 Gemini
-    controls (emotion / pitch / volume / prosody / accent — strictly enum'd).
+  - TTS via SpeechModelV2 → POST /waves/v1/tts (model: lightning_v3.1 | lightning_v3.1_pro)
+    Provider options surface: text, voice_id, model, speed, language,
+    sample_rate, output_format, pronunciation_dicts.
 
-  - STT via TranscriptionModelV2 → POST /waves/v1/pulse/get_text
-    Query params surface: language, word_timestamps, diarize, emotion_detection,
+  - STT via TranscriptionModelV2 → POST /waves/v1/stt/?model=<pulse|pulse-pro>
+    (pulse-pro is batch-only; realtime WS is /waves/v1/stt/live, pulse only)
+    Query params surface: model, language, word_timestamps, diarize, emotion_detection,
     gender_detection, redact_pii, redact_pci, numerals, keywords, punctuate,
     capitalize, webhook_url, webhook_method, webhook_extra. Forward-compat
     knobs (WS-only on server today): itn_normalize, sentence_timestamps,

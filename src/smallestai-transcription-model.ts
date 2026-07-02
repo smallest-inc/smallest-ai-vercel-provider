@@ -1,4 +1,4 @@
-import type { TranscriptionModelV2 } from '@ai-sdk/provider';
+import type { TranscriptionModelV4 } from '@ai-sdk/provider';
 import {
   combineHeaders,
   convertBase64ToUint8Array,
@@ -8,8 +8,8 @@ import { z } from 'zod';
 import type { SmallestAIConfig } from './smallestai-config';
 import type { SmallestAITranscriptionModelId } from './smallestai-transcription-options';
 
-// Batch STT (POST /waves/v1/pulse/get_text) — fields the server
-// schema (waves-platform `lightningAsrQuerySchema`) actually accepts.
+// Batch STT (POST /waves/v1/stt/?model=<pulse|pulse-pro>) — fields the
+// server schema actually accepts as query params. `model` is required.
 // WS-only knobs (itnNormalize, sentenceTimestamps, fullTranscript,
 // finalizeOnWords, maxWords) live on `SmallestAITranscriptionStreamOptions`
 // — they're meaningless on the batch endpoint (server silently strips
@@ -82,8 +82,8 @@ const setBool = (params: URLSearchParams, key: string, value: boolean) => {
   params.set(key, value ? 'true' : 'false');
 };
 
-export class SmallestAITranscriptionModel implements TranscriptionModelV2 {
-  readonly specificationVersion = 'v2' as const;
+export class SmallestAITranscriptionModel implements TranscriptionModelV4 {
+  readonly specificationVersion = 'v4' as const;
 
   get provider(): string {
     return this.config.provider;
@@ -95,8 +95,8 @@ export class SmallestAITranscriptionModel implements TranscriptionModelV2 {
   ) {}
 
   async doGenerate(
-    options: Parameters<TranscriptionModelV2['doGenerate']>[0],
-  ): Promise<Awaited<ReturnType<TranscriptionModelV2['doGenerate']>>> {
+    options: Parameters<TranscriptionModelV4['doGenerate']>[0],
+  ): Promise<Awaited<ReturnType<TranscriptionModelV4['doGenerate']>>> {
     const { audio, mediaType, providerOptions, headers, abortSignal } = options;
 
     const smallestaiOptions = await parseProviderOptions({
@@ -110,7 +110,9 @@ export class SmallestAITranscriptionModel implements TranscriptionModelV2 {
 
     const language = smallestaiOptions?.language ?? 'en';
 
-    const queryParams = new URLSearchParams({ language });
+    // `model` is required on the unified STT route; both 'pulse' and
+    // the batch-only 'pulse-pro' are valid here.
+    const queryParams = new URLSearchParams({ model: this.modelId, language });
 
     setBool(queryParams, 'word_timestamps', smallestaiOptions?.wordTimestamps ?? true);
     setBool(queryParams, 'diarize', smallestaiOptions?.diarize ?? false);
@@ -149,7 +151,7 @@ export class SmallestAITranscriptionModel implements TranscriptionModelV2 {
     }
 
     const url = this.config.url({
-      path: `/waves/v1/${this.modelId}/get_text?${queryParams.toString()}`,
+      path: `/waves/v1/stt/?${queryParams.toString()}`,
       modelId: this.modelId,
     });
 
@@ -190,15 +192,20 @@ export class SmallestAITranscriptionModel implements TranscriptionModelV2 {
       })) ?? [];
 
     const lastWord = parsed.words?.at(-1);
-    const durationInSeconds = parsed.audio_length ?? lastWord?.end ?? undefined;
+    const durationInSeconds =
+      parsed.audio_length ??
+      parsed.metadata?.duration ??
+      lastWord?.end ??
+      undefined;
 
     const warnings: Awaited<
-      ReturnType<TranscriptionModelV2['doGenerate']>
+      ReturnType<TranscriptionModelV4['doGenerate']>
     >['warnings'] = [];
 
     if (smallestaiOptions?.ageDetection) {
       warnings.push({
-        type: 'other' as const,
+        type: 'deprecated' as const,
+        setting: 'ageDetection',
         message:
           "providerOptions.smallestai.ageDetection has been removed from the Smallest AI ASR API and will be ignored.",
       });

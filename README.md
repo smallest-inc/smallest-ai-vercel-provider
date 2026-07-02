@@ -30,11 +30,11 @@ const smallestai = createSmallestAI({ apiKey: 'your_key_here' });
 ## Text-to-Speech
 
 ```ts
-import { experimental_generateSpeech as generateSpeech } from 'ai';
+import { generateSpeech } from 'ai';
 import { smallestai } from 'smallestai-vercel-provider';
 
 const { audio } = await generateSpeech({
-  model: smallestai.speech('lightning-v3.1'),
+  model: smallestai.speech('lightning_v3.1'),
   text: 'Hello from Smallest AI!',
   voice: 'sophia',
   speed: 1.0,
@@ -48,7 +48,8 @@ const { audio } = await generateSpeech({
 
 | Model ID | Description |
 |---|---|
-| `lightning-v3.1` | 44.1 kHz, natural expressive speech, 22 languages with auto-detect |
+| `lightning_v3.1` | Default. 44.1 kHz, natural expressive speech, 12 languages with auto-detect, voice cloning supported |
+| `lightning_v3.1_pro` | Premium broadcast-quality pool (English + Hindi). American / British / Indian accents; Indian voices code-switch. No cloning |
 
 You can also import the model name as a constant:
 
@@ -60,15 +61,32 @@ const model = smallestai.speech(DEFAULT_LIGHTNING_MODEL);
 
 ### Voices
 
+Pass any catalog `voice` as a string. **Pair the voice with its pool** —
+standard voices use `lightning_v3.1`, Pro voices require
+`lightning_v3.1_pro` (the API rejects a Pro voice on the standard model).
+
+**Standard pool** (`lightning_v3.1`):
+
 | Voice | Gender | Accent | Best For |
 |---|---|---|---|
 | `sophia` | Female | American | General use (default) |
 | `robert` | Male | American | Announcements, briefings |
 | `advika` | Female | Indian | Hindi, code-switching |
 | `vivaan` | Male | Indian | Bilingual English/Hindi |
-| `camilla` | Female | Mexican/Latin | Spanish content |
+| `camilla` | Female | Spanish | Spanish content |
 
-80+ more voices available. See [API docs](https://docs.smallest.ai/waves).
+**Pro pool** (`lightning_v3.1_pro`):
+
+| Voice | Gender | Accent | Best For |
+|---|---|---|---|
+| `meher` | Female | Indian | Premium Hindi/English code-switching |
+| `sophie` | Female | British | Broadcast-quality English |
+| `blake` | Male | American | Premium narration |
+
+List the full catalog (200+ voices, union of both pools) via
+`GET /waves/v1/lightning-v3.1/get_voices`, or see the model cards:
+[Lightning v3.1](https://docs.smallest.ai/waves/model-cards/text-to-speech/lightning-v-3-1) ·
+[Lightning v3.1 Pro](https://docs.smallest.ai/waves/model-cards/text-to-speech/lightning-v-3-1-pro).
 
 ### Provider Options
 
@@ -78,21 +96,28 @@ import { LightningV31Language } from 'smallestai-vercel-provider';
 const language: LightningV31Language = 'auto'; // type-checked against the v3.1 enum
 
 const { audio } = await generateSpeech({
-  model: smallestai.speech('lightning-v3.1'),
+  model: smallestai.speech('lightning_v3.1'),
   text: 'Hello!',
   voice: 'robert',
   language,
   providerOptions: {
     smallestai: {
-      sampleRate: 44100,         // 8000 | 16000 | 24000 | 44100
-      similarity: 0.5,           // 0–1
-      enhancement: 1,            // 0 | 1 | 2
+      sampleRate: 24000,         // 8000 | 16000 | 24000 | 44100
       outputFormat: 'mp3',       // 'pcm' | 'mp3' | 'wav' | 'ulaw' | 'alaw' | 'mulaw' (alias of 'ulaw')
-      addWavHeader: false,
-      saveHistory: false,
       pronunciationDicts: ['<dict-id>'],
     },
   },
+});
+```
+
+To use the premium **Pro** pool, select the Pro model and a Pro voice:
+
+```ts
+const { audio } = await generateSpeech({
+  model: smallestai.speech('lightning_v3.1_pro'),
+  text: 'Broadcast-quality narration.',
+  voice: 'meher',            // must be a Pro-pool voice
+  language: 'en',
 });
 ```
 
@@ -109,7 +134,7 @@ const { audio } = await generateSpeech({
 ## Speech-to-Text
 
 ```ts
-import { experimental_transcribe as transcribe } from 'ai';
+import { transcribe } from 'ai';
 import { smallestai } from 'smallestai-vercel-provider';
 import { readFileSync } from 'fs';
 
@@ -122,6 +147,23 @@ const { text, segments } = await transcribe({
 });
 
 console.log(text);
+```
+
+### Models
+
+| Model ID | Languages | Notes |
+|---|---|---|
+| `pulse` | 38 (auto-detect) | Batch **and** WebSocket streaming (64 ms TTFT). Use for multilingual or real-time. |
+| `pulse-pro` | English only | **Batch/pre-recorded only** — leaderboard-ranked accuracy. No streaming (`transcriptionStream` rejects it). |
+
+```ts
+// Max-accuracy English batch transcription:
+const { text } = await transcribe({
+  model: smallestai.transcription('pulse-pro'),
+  audio: audioBuffer,
+  mediaType: 'audio/wav',
+  providerOptions: { smallestai: { language: 'en' } },
+});
 ```
 
 ### Provider Options
@@ -532,7 +574,7 @@ const all = await smallestai.voiceClone.list();
 
 // Use it as a voice in TTS
 const { audio } = await generateSpeech({
-  model: smallestai.speech('lightning-v3.1'),
+  model: smallestai.speech('lightning_v3.1'),
   text: 'Hello in my own voice.',
   voice: clone.voiceId,
 });
@@ -547,14 +589,14 @@ await smallestai.voiceClone.delete(clone.voiceId);
 
 ```ts
 // app/api/speak/route.ts
-import { experimental_generateSpeech as generateSpeech } from 'ai';
+import { generateSpeech } from 'ai';
 import { smallestai } from 'smallestai-vercel-provider';
 
 export async function POST(req: Request) {
   const { text, voice } = await req.json();
 
   const { audio } = await generateSpeech({
-    model: smallestai.speech('lightning-v3.1'),
+    model: smallestai.speech('lightning_v3.1'),
     text,
     voice: voice || 'sophia',
   });
@@ -593,7 +635,7 @@ export function SpeakButton({ text }: { text: string }) {
 
 ```ts
 // app/api/transcribe/route.ts
-import { experimental_transcribe as transcribe } from 'ai';
+import { transcribe } from 'ai';
 import { smallestai } from 'smallestai-vercel-provider';
 
 export async function POST(req: Request) {
@@ -614,12 +656,12 @@ export async function POST(req: Request) {
 ### Node.js Script — Save to file
 
 ```ts
-import { experimental_generateSpeech as generateSpeech } from 'ai';
+import { generateSpeech } from 'ai';
 import { smallestai } from 'smallestai-vercel-provider';
 import { writeFileSync } from 'fs';
 
 const { audio } = await generateSpeech({
-  model: smallestai.speech('lightning-v3.1'),
+  model: smallestai.speech('lightning_v3.1'),
   text: 'Hello from Smallest AI!',
   voice: 'sophia',
 });
