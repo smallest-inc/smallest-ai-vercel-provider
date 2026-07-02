@@ -101,6 +101,7 @@ export function createSmallestAI(
       description: 'Smallest AI',
     })}`,
     'User-Agent': `smallest-ai-vercel-provider/${VERSION}`,
+    'X-Source': 'vercel-sdk',
     ...options.headers,
   });
 
