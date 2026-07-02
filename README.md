@@ -738,6 +738,30 @@ Future / deferred — open an issue if any of these would unblock you:
 - **`useTextToSpeechStream`** — wraps the streaming TTS endpoint so the browser can play audio as it's generated instead of waiting for the full clip. Currently `useSpeech` is one-shot.
 - **Cookbook recipes** — push-to-talk, voice agent loop, browser → mic → live captions overlay, etc.
 
+## Releasing
+
+Publishing is automated. A merge to `main` that changes the `version` in
+`package.json` publishes that version to npm and pushes a matching `vX.Y.Z`
+git tag. Auth uses npm Trusted Publishers (OIDC), so there is no npm token to
+manage.
+
+To cut a release:
+
+1. In your PR, bump `version` in `package.json` following semver.
+2. Get the PR reviewed and merged into `main`.
+3. The `Publish to npm` workflow runs on merge. It publishes only if that
+   version is not already on npm, then creates the `vX.Y.Z` tag.
+
+Notes:
+
+- A merge that does not change the version is a no-op. The workflow skips
+  when the version already exists on npm, so nothing breaks.
+- Do not run `npm publish` by hand. Bump the version in a PR and let the
+  workflow do it, so the npm release and the git tag always stay in sync.
+- The npm Trusted Publisher config (org, repo, workflow filename) must match
+  `.github/workflows/publish.yml`. If you rename that file, update the config
+  on npmjs.com or publishing will start failing.
+
 ## Links
 
 - [Smallest AI](https://smallest.ai)

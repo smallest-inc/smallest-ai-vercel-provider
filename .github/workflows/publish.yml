@@ -1,0 +1,84 @@
+name: Publish to npm
+
+# Publishes the package to npm whenever package.json's `version` lands on
+# main (i.e. after a version-bumping PR is merged). Authenticates via npm
+# Trusted Publishers (OIDC) — there is NO NPM_TOKEN secret to manage or
+# rotate. If the version in package.json already exists on npm, the job
+# skips silently, so merges that don't bump the version are a safe no-op.
+#
+# One-time setup on npmjs.com — the package's Trusted Publisher config
+# (Package → Settings → "Trusted Publisher") MUST match these values
+# exactly, or the OIDC exchange is rejected:
+#
+#   Provider:          GitHub Actions
+#   Organization/user: smallest-inc
+#   Repository:        smallest-ai-vercel-provider
+#   Workflow filename: publish.yml       <-- the basename of THIS file
+#   Environment:       (leave blank)
+#
+# If you rename this file, update the "Workflow filename" on npmjs.com to
+# match, otherwise publishing will start failing with a 403.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+
+permissions:
+  contents: write   # create & push the vX.Y.Z git tag
+  id-token: write   # mint the OIDC token npm exchanges for publish auth
+
+jobs:
+  publish:
+    name: Publish new version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted Publishing (OIDC) requires npm >= 11.5.1; Node 20 ships 10.x.
+      - name: Upgrade npm for OIDC support
+        run: npm install -g npm@latest
+
+      - name: Read name & version from package.json
+        id: pkg
+        run: |
+          echo "name=$(node -p "require('./package.json').name")"       >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if this version is already on npm
+        id: check
+        run: |
+          NAME="${{ steps.pkg.outputs.name }}"
+          VERSION="${{ steps.pkg.outputs.version }}"
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$NAME@$VERSION already published — nothing to do."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$NAME@$VERSION is new — will publish."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.check.outputs.publish == 'true'
+        run: npm ci
+
+      # prepublishOnly runs the build; --provenance is auto-enabled under
+      # Trusted Publishing and attaches a signed build attestation.
+      - name: Publish
+        if: steps.check.outputs.publish == 'true'
+        run: npm publish --provenance --access public
+
+      - name: Tag the release
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          VERSION="${{ steps.pkg.outputs.version }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin "v$VERSION"
